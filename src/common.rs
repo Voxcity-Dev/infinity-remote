@@ -1081,6 +1081,23 @@ fn get_api_server_(api: String, custom: String) -> String {
             return format!("http://{}", s);
         }
     }
+    // Infinity Remote: API_SERVER no ambiente de build (option_env!) substitui o padrão.
+    // Sem API_SERVER, deriva do RENDEZVOUS_SERVER de build (porta 21114), como o
+    // upstream faz para servidor customizado; nunca cai em admin.rustdesk.com.
+    if let Some(s) = option_env!("API_SERVER") {
+        if !s.is_empty() {
+            return s.to_owned();
+        }
+    }
+    if let Some(s) = option_env!("RENDEZVOUS_SERVER") {
+        if !s.is_empty() {
+            let s1 = crate::increase_port(s, -2);
+            if s1 == s {
+                return format!("http://{}:{}", s, config::RENDEZVOUS_PORT - 2);
+            }
+            return format!("http://{}", s1);
+        }
+    }
     "https://admin.rustdesk.com".to_owned()
 }
 
