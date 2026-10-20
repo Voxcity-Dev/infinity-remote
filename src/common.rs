@@ -1011,7 +1011,8 @@ pub fn is_rustdesk() -> bool {
 
 #[inline]
 pub fn get_uri_prefix() -> String {
-    format!("{}://", get_app_name().to_lowercase())
+    // Infinity Remote: o nome tem espaço; o esquema vira `infinity-remote://`.
+    format!("{}://", get_app_name().to_lowercase().replace(' ', "-"))
 }
 
 #[cfg(target_os = "macos")]

@@ -836,7 +836,7 @@ fn core_main_invoke_new_connection(mut args: std::env::Args) -> Option<Vec<Strin
     if let Some(authority) = authority {
         if let Some(mut id) = id {
             let app_name = crate::get_app_name();
-            let ext = format!(".{}", app_name.to_lowercase());
+            let ext = format!(".{}", app_name.to_lowercase().replace(' ', "-"));
             if id.ends_with(&ext) {
                 id = id.replace(&ext, "");
             }

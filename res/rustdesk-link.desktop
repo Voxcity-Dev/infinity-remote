@@ -1,7 +1,7 @@
 [Desktop Entry]
-Name=RustDesk
+Name=Infinity Remote
 NoDisplay=true
-MimeType=x-scheme-handler/rustdesk;
+MimeType=x-scheme-handler/infinity-remote;
 TryExec=rustdesk
 Exec=rustdesk %u
 Icon=rustdesk
