@@ -396,7 +396,7 @@ pub fn core_main() -> Option<Vec<String>> {
                 hbb_common::allow_err!(crate::platform::check_autostart_config());
                 std::process::Command::new("pkill")
                     .arg("-f")
-                    .arg(&format!("{} --tray", crate::get_app_name().to_lowercase()))
+                    .arg(&format!("{} --tray", crate::get_app_slug()))
                     .status()
                     .ok();
                 hbb_common::allow_err!(crate::run_me(vec!["--tray"]));

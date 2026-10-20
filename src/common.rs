@@ -1004,6 +1004,16 @@ pub fn get_app_name() -> String {
     hbb_common::config::APP_NAME.read().unwrap().clone()
 }
 
+/// Infinity Remote: identificador "de sistema" do app — nome em minúsculas com espaço
+/// virando hífen ("Infinity Remote" -> "infinity-remote"). No Linux é o nome do binário,
+/// do serviço systemd, do .desktop, de /etc/<slug>, /usr/share/<slug> e do pam.d.
+/// O upstream usa get_app_name().to_lowercase() ("rustdesk"), que com espaço quebraria
+/// `systemctl`, `pkill -f` e os caminhos.
+#[inline]
+pub fn get_app_slug() -> String {
+    get_app_name().to_lowercase().replace(' ', "-")
+}
+
 #[inline]
 pub fn is_rustdesk() -> bool {
     hbb_common::config::APP_NAME.read().unwrap().eq("RustDesk")
@@ -1012,7 +1022,7 @@ pub fn is_rustdesk() -> bool {
 #[inline]
 pub fn get_uri_prefix() -> String {
     // Infinity Remote: o nome tem espaço; o esquema vira `infinity-remote://`.
-    format!("{}://", get_app_name().to_lowercase().replace(' ', "-"))
+    format!("{}://", get_app_slug())
 }
 
 #[cfg(target_os = "macos")]

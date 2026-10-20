@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Infinity Remote
+NoDisplay=true
+MimeType=x-scheme-handler/infinity-remote;
+TryExec=infinity-remote
+Exec=infinity-remote %u
+Icon=infinity-remote
+Terminal=false
+Type=Application
+StartupNotify=false
+StartupWMClass=infinity-remote

@@ -5,23 +5,23 @@ set -e
 if [ "$1" = configure ]; then
 
 	INITSYS=$(ls -al /proc/1/exe | awk -F' ' '{print $NF}' | awk -F'/' '{print $NF}')
-	ln -f -s /usr/share/rustdesk/rustdesk /usr/bin/rustdesk
+	ln -f -s /usr/share/infinity-remote/infinity-remote /usr/bin/infinity-remote
 
 	if [ "systemd" == "$INITSYS" ]; then
 
-		if [ -e /etc/systemd/system/rustdesk.service ]; then
-			rm /etc/systemd/system/rustdesk.service /usr/lib/systemd/system/rustdesk.service /usr/lib/systemd/user/rustdesk.service >/dev/null  2>&1
+		if [ -e /etc/systemd/system/infinity-remote.service ]; then
+			rm /etc/systemd/system/infinity-remote.service /usr/lib/systemd/system/infinity-remote.service /usr/lib/systemd/user/infinity-remote.service >/dev/null  2>&1
 		fi
 		mkdir -p /usr/lib/systemd/system/
-		cp /usr/share/rustdesk/files/systemd/rustdesk.service /usr/lib/systemd/system/rustdesk.service
+		cp /usr/share/infinity-remote/files/systemd/infinity-remote.service /usr/lib/systemd/system/infinity-remote.service
 		# try fix error in Ubuntu 18.04
-		# Failed to reload rustdesk.service: Unit rustdesk.service is not loaded properly: Exec format error.
-		# /usr/lib/systemd/system/rustdesk.service:10: Executable path is not absolute: pkill -f "rustdesk --"
+		# Failed to reload infinity-remote.service: Unit infinity-remote.service is not loaded properly: Exec format error.
+		# /usr/lib/systemd/system/infinity-remote.service:10: Executable path is not absolute: pkill -f "infinity-remote --"
 		if [ -e /usr/bin/pkill ]; then
-			sed -i "s|pkill|/usr/bin/pkill|g" /usr/lib/systemd/system/rustdesk.service
+			sed -i "s|pkill|/usr/bin/pkill|g" /usr/lib/systemd/system/infinity-remote.service
 		fi
 		systemctl daemon-reload
-		systemctl enable rustdesk
-		systemctl start rustdesk
+		systemctl enable infinity-remote
+		systemctl start infinity-remote
 	fi
 fi
