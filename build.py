@@ -299,7 +299,7 @@ Priority: optional
 Version: %s
 Architecture: %s
 Maintainer: Vox City (placeholder) <infinity@voxcity.com.br>
-Homepage: https://github.com/rustdesk/rustdesk
+Homepage: https://github.com/Voxcity-Dev/infinity-remote
 Depends: libgtk-3-0t64 | libgtk-3-0, libxcb-randr0, libxdo3 | libxdo4, libxfixes3, libxcb-shape0, libxcb-xfixes0, libasound2t64 | libasound2, libsystemd0, curl, libva2, libva-drm2, libva-x11-2, libgstreamer-plugins-base1.0-0, libpam0g, gstreamer1.0-pipewire%s
 Recommends: libayatana-appindicator3-1
 Description: Infinity Remote - acesso remoto (fork do RustDesk, AGPL-3.0).
