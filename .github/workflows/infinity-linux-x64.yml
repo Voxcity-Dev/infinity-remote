@@ -1,0 +1,66 @@
+# Infinity Remote: build só do Linux x86_64 (.deb), disparado à mão, com o MESMO
+# ambiente reprodutível do build local (build-env/docker/Dockerfile.linux +
+# build-linux.sh). Servidor, chave pública e API vêm das variáveis do repositório
+# (Settings > Variables: RENDEZVOUS_SERVER, RS_PUB_KEY, API_SERVER), gravadas num
+# build-env/ci.env que só existe no runner. Não publica release: só artefato do run.
+# O .deb exige glibc >= 2.35 (Ubuntu 22.04+/Debian 12+), como o build local.
+name: Infinity Linux x64 (dispatch)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-linux-x64:
+    name: x86_64-unknown-linux-gnu (Infinity, .deb)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - name: Check build-time server variables
+        env:
+          RENDEZVOUS_SERVER: "${{ vars.RENDEZVOUS_SERVER }}"
+          RS_PUB_KEY: "${{ vars.RS_PUB_KEY }}"
+          API_SERVER: "${{ vars.API_SERVER }}"
+        run: |
+          for v in RENDEZVOUS_SERVER RS_PUB_KEY API_SERVER; do
+            [ -n "${!v}" ] || { echo "vars.$v vazio"; exit 1; }
+          done
+          echo "RENDEZVOUS_SERVER len=${#RENDEZVOUS_SERVER}; RS_PUB_KEY len=${#RS_PUB_KEY}; API_SERVER len=${#API_SERVER}"
+
+      - name: Maximize build space
+        run: |
+          sudo rm -rf /opt/ghc /usr/local/lib/android /usr/share/dotnet /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af >/dev/null
+          sudo mkdir -p /mnt/ir-cache /mnt/ir-cache/vcpkg-installed && sudo chown -R "$(id -u):$(id -g)" /mnt/ir-cache
+          df -h / /mnt
+
+      - name: Checkout source code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+
+      - name: Write build-env/ci.env from repository variables
+        env:
+          RENDEZVOUS_SERVER: "${{ vars.RENDEZVOUS_SERVER }}"
+          RS_PUB_KEY: "${{ vars.RS_PUB_KEY }}"
+          API_SERVER: "${{ vars.API_SERVER }}"
+        run: |
+          printf 'RENDEZVOUS_SERVER=%s\nRS_PUB_KEY=%s\nAPI_SERVER=%s\n' \
+            "$RENDEZVOUS_SERVER" "$RS_PUB_KEY" "$API_SERVER" > build-env/ci.env
+
+      - name: Build image (build-env/docker/Dockerfile.linux)
+        run: docker build -t infinity-remote-build:linux -f build-env/docker/Dockerfile.linux .github/patches
+
+      - name: Build .deb (build-env/docker/build-linux.sh ci)
+        run: |
+          C=/mnt/ir-cache
+          docker run --rm -u "$(id -u):$(id -g)" -e CARGO_BUILD_JOBS=4 -e VCPKG_MAX_CONCURRENCY=4 \
+            -v "$PWD":/workspace -v "$C":/cache -v "$C/vcpkg-installed":/opt/vcpkg/installed \
+            infinity-remote-build:linux bash build-env/docker/build-linux.sh ci
+          rm -f build-env/ci.env
+          sha256sum infinity-remote-*.deb
+
+      - name: Upload .deb
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: infinity-remote-linux-x86_64-deb
+          path: infinity-remote-*.deb
