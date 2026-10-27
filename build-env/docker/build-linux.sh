@@ -33,7 +33,8 @@ set +a
 for v in RENDEZVOUS_SERVER RS_PUB_KEY API_SERVER; do
   [ -n "${!v:-}" ] || { echo "ERRO: ${v} vazio em build-env/${ENV_NAME}.env"; exit 1; }
 done
-echo "== env de build: ${ENV_NAME} (RENDEZVOUS_SERVER=${RENDEZVOUS_SERVER}; API_SERVER=${API_SERVER})"
+# só tamanhos: o log do Actions do fork é público e variável de repositório não é mascarada
+echo "== env de build: ${ENV_NAME} (RENDEZVOUS_SERVER len=${#RENDEZVOUS_SERVER}; RS_PUB_KEY len=${#RS_PUB_KEY}; API_SERVER len=${#API_SERVER})"
 
 t0=$(date +%s)
 step() { echo; echo "== [$(( $(date +%s) - t0 ))s] $*"; }

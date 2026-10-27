@@ -9,6 +9,9 @@ name: Infinity Linux x64 (dispatch)
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build-linux-x64:
     name: x86_64-unknown-linux-gnu (Infinity, .deb)
