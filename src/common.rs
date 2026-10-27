@@ -1082,6 +1082,15 @@ fn get_api_server_(api: String, custom: String) -> String {
     if !api.is_empty() {
         return api.to_owned();
     }
+    // Infinity Remote: a API do Infinity (API_SERVER do ambiente de build, option_env!)
+    // vence a derivação do servidor de rendezvous. Sem isso, quem grava
+    // custom-rendezvous-server cai em http://<rendezvous>:21114/api, que não existe
+    // (timeout em loop). A opção "api-server" explícita continua vencendo.
+    if let Some(s) = option_env!("API_SERVER") {
+        if !s.is_empty() {
+            return s.to_owned();
+        }
+    }
     let s0 = get_custom_rendezvous_server(custom);
     if !s0.is_empty() {
         let s = crate::increase_port(&s0, -2);
@@ -1091,14 +1100,8 @@ fn get_api_server_(api: String, custom: String) -> String {
             return format!("http://{}", s);
         }
     }
-    // Infinity Remote: API_SERVER no ambiente de build (option_env!) substitui o padrão.
-    // Sem API_SERVER, deriva do RENDEZVOUS_SERVER de build (porta 21114), como o
-    // upstream faz para servidor customizado; nunca cai em admin.rustdesk.com.
-    if let Some(s) = option_env!("API_SERVER") {
-        if !s.is_empty() {
-            return s.to_owned();
-        }
-    }
+    // Sem API_SERVER de build, deriva do RENDEZVOUS_SERVER de build (porta 21114),
+    // como o upstream faz para servidor customizado; nunca cai em admin.rustdesk.com.
     if let Some(s) = option_env!("RENDEZVOUS_SERVER") {
         if !s.is_empty() {
             let s1 = crate::increase_port(s, -2);

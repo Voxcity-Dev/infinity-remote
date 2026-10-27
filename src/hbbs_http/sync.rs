@@ -132,6 +132,12 @@ async fn start_hbbs_sync_async() {
                     v["version"] = json!(crate::VERSION);
                     v["id"] = json!(id);
                     v["uuid"] = json!(crate::encode64(hbb_common::get_uuid()));
+                    // Infinity Remote: chave de instalação da empresa (irk_...). O core
+                    // usa para registrar o computador na empresa (contrato-api-cliente.md).
+                    let infinity_chave = Config::get_option("infinity-chave");
+                    if !infinity_chave.is_empty() {
+                        v["infinity_chave"] = json!(infinity_chave);
+                    }
                     let ab_name = Config::get_option(keys::OPTION_PRESET_ADDRESS_BOOK_NAME);
                     if !ab_name.is_empty() {
                         v[keys::OPTION_PRESET_ADDRESS_BOOK_NAME] = json!(ab_name);

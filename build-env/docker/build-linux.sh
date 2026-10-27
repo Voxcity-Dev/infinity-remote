@@ -30,7 +30,10 @@ set -a
 # shellcheck disable=SC1090
 . "build-env/${ENV_NAME}.env"
 set +a
-echo "== env de build: ${ENV_NAME} (RENDEZVOUS_SERVER=${RENDEZVOUS_SERVER:-<padrão>})"
+for v in RENDEZVOUS_SERVER RS_PUB_KEY API_SERVER; do
+  [ -n "${!v:-}" ] || { echo "ERRO: ${v} vazio em build-env/${ENV_NAME}.env"; exit 1; }
+done
+echo "== env de build: ${ENV_NAME} (RENDEZVOUS_SERVER=${RENDEZVOUS_SERVER}; API_SERVER=${API_SERVER})"
 
 t0=$(date +%s)
 step() { echo; echo "== [$(( $(date +%s) - t0 ))s] $*"; }
