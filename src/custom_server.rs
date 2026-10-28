@@ -107,9 +107,77 @@ pub fn get_custom_server_from_string(s: &str) -> ResultType<CustomServer> {
     bail!("Failed to parse");
 }
 
+/// Infinity Remote: o convite do ticket no nome do instalador
+/// (`infinity-remote-ric_<43 caracteres>.exe`). Tolera o caminho, o `.exe` (ou `.exe.exe`) e
+/// o " (1)" que o Windows acrescenta a download repetido, como o parser acima.
+/// Devolve só o token: host, key e api NUNCA vêm do nome do convite (o servidor é o do build).
+pub fn get_convite_from_string(s: &str) -> Option<String> {
+    const PREFIXO: &str = "ric_";
+    const TAMANHO: usize = 43;
+    let nome = s.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(s);
+    let lower = nome.to_lowercase();
+    let nome = if lower.ends_with(".exe.exe") {
+        &nome[0..nome.len() - 8]
+    } else if lower.ends_with(".exe") {
+        &nome[0..nome.len() - 4]
+    } else {
+        nome
+    };
+    let eh_do_token = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-';
+    let mut achado: Option<String> = None;
+    for (i, _) in nome.match_indices(PREFIXO) {
+        // O prefixo começa uma palavra ("...-ric_" ou no início), não o meio de outro token.
+        if i > 0 {
+            if let Some(antes) = nome[..i].chars().last() {
+                if antes.is_ascii_alphanumeric() {
+                    continue;
+                }
+            }
+        }
+        let resto = &nome[i + PREFIXO.len()..];
+        let token: String = resto.chars().take_while(|c| eh_do_token(*c)).collect();
+        // " (1)", "(1)" e o fim do nome encerram o token; 43 caracteres exatos.
+        if token.len() == TAMANHO {
+            if achado.is_some() {
+                return None; // dois convites no nome: nenhum
+            }
+            achado = Some(format!("{}{}", PREFIXO, token));
+        }
+    }
+    achado
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_convite_no_nome_do_instalador() {
+        let t = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_abcde";
+        assert_eq!(t.len(), 43);
+        let esperado = Some(format!("ric_{}", t));
+        assert_eq!(get_convite_from_string(&format!("infinity-remote-ric_{}.exe", t)), esperado);
+        assert_eq!(get_convite_from_string(&format!("infinity-remote-ric_{} (1).exe", t)), esperado);
+        assert_eq!(get_convite_from_string(&format!("infinity-remote-ric_{}(2).exe", t)), esperado);
+        assert_eq!(get_convite_from_string(&format!("infinity-remote-ric_{}.exe.exe", t)), esperado);
+        assert_eq!(
+            get_convite_from_string(&format!("C:\\Users\\a\\Downloads\\infinity-remote-ric_{}.exe", t)),
+            esperado
+        );
+        assert_eq!(get_convite_from_string("infinity-remote.exe"), None);
+        assert_eq!(get_convite_from_string(&format!("infinity-remote-ric_{}x.exe", t)), None);
+        assert_eq!(get_convite_from_string(&format!("infinity-remote-ric_{}.exe", &t[1..])), None);
+        assert_eq!(get_convite_from_string(&format!("infinity-remote-xric_{}.exe", t)), None);
+        // host/key/api no nome não viram convite nem passam junto
+        assert_eq!(
+            get_convite_from_string(&format!("infinity-remote-ric_{},host=evil.example.exe", t)),
+            esperado
+        );
+        assert_eq!(
+            get_convite_from_string(&format!("ric_{} ric_{}.exe", t, t)),
+            None
+        );
+    }
 
     #[test]
     fn test_filename_license_string() {

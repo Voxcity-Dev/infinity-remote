@@ -1691,8 +1691,8 @@ pub async fn http_request_sync(
     body: Option<String>,
     header: String,
 ) -> ResultType<String> {
-    // Infinity Remote: login, agenda e demais chamadas do técnico vão à API do Infinity sem
-    // certificado inválido e sem o desvio pelo rendezvous (ver post_request).
+    // Infinity Remote: login, agenda, prova e "o que foi feito" do técnico vão à API do
+    // Infinity sem certificado inválido e sem o desvio pelo rendezvous (ver post_request).
     if crate::infinity::eh_api_do_infinity(&url) {
         return crate::infinity::http_estrito(&url, &method, body, &header).await;
     }

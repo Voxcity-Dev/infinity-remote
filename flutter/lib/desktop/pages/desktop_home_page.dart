@@ -702,6 +702,9 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     super.initState();
     _updateTimer = periodic_immediate(const Duration(seconds: 1), () async {
       await gFFI.serverModel.fetchID();
+      // Infinity Remote: o consentimento "acesso sem alguém aqui", uma vez, quando o
+      // computador entra numa empresa.
+      infinityTalvezPerguntarConsentimento();
       final error = await bind.mainGetError();
       if (systemError != error) {
         systemError = error;

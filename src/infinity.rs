@@ -9,12 +9,22 @@
 //! - Endurecimento: chamada à API do Infinity só com certificado verificado e nunca pelo
 //!   desvio TCP do servidor de rendezvous (o upstream faz as duas coisas quando o HTTPS falha:
 //!   a primeira com `allow-insecure-tls-fallback`, a segunda por padrão).
+//! - Convite (`ric_`): do nome do instalador (Windows) ou do link `infinity-remote://convite/<token>`.
+//! - Acesso sem ninguém: o técnico leva a prova (`irp_`) no LoginRequest; o computador com o
+//!   consentimento a confere em `/api/autorizar-acesso` (com o segredo).
 //!
-//! Nenhum valor de chave, segredo ou token vai para log.
+//! Nenhum valor de chave, segredo, convite, prova ou token vai para log.
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use hbb_common::tokio;
-use hbb_common::{anyhow::anyhow, bail, config::Config, log, tls::TlsType, ResultType};
+use hbb_common::{
+    anyhow::anyhow,
+    bail,
+    config::{Config, LocalConfig},
+    log,
+    tls::TlsType,
+    ResultType,
+};
 use serde_json::{json, Map, Value};
 use std::time::Duration;
 
@@ -27,15 +37,31 @@ pub const OPCAO_TROCA_DE_CHAVE: &str = "infinity-chave-troca";
 /// Segredo do computador (`ird_…`). Só o serviço escreve. Nunca em log.
 pub const OPCAO_SEGREDO: &str = "infinity-segredo";
 
+/// Convite do ticket (`ric_…`) ainda não entregue ao Infinity.
+pub const OPCAO_CONVITE: &str = "infinity-convite";
+/// sha256 (hex) do último convite já entregue: o mesmo instalador aberto de novo não o repete.
+pub const OPCAO_CONVITE_GASTO: &str = "infinity-convite-gasto";
+/// Nome da empresa, quando o Infinity o manda (cabeçalho `x-infinity-empresa`).
+pub const OPCAO_EMPRESA: &str = "infinity-empresa";
+/// Consentimento "técnicos da empresa acessam sem alguém aqui": "Y", "N" ou vazio (não perguntado).
+pub const OPCAO_SEM_NINGUEM: &str = "infinity-acesso-sem-ninguem";
+/// Lado do técnico: pedido do ticket (`<rustdesk_id>:<pedido_uuid>`) vindo do link de conexão.
+pub const OPCAO_LOCAL_PEDIDO: &str = "infinity-pedido";
+
 pub const CABECALHO_SEGREDO: &str = "x-infinity-segredo";
+pub const CABECALHO_EMPRESA: &str = "x-infinity-empresa";
 const PEDIDO_DE_SEGREDO: &str = "novo";
 
 pub const PREFIXO_SEGREDO: &str = "ird_";
 pub const PREFIXO_CHAVE: &str = "irk_";
+pub const PREFIXO_CONVITE: &str = "ric_";
+pub const PREFIXO_PROVA: &str = "irp_";
+const PREFIXO_TOKEN_TECNICO: &str = "irm_";
 /// 32 bytes em base64url sem preenchimento.
 const TAMANHO_TOKEN: usize = 43;
 
 const TEMPO_LIMITE: Duration = Duration::from_secs(12);
+const TEMPO_LIMITE_PROVA: Duration = Duration::from_secs(6);
 
 #[inline]
 fn caractere_de_token(c: char) -> bool {
@@ -47,6 +73,13 @@ pub fn token_valido(s: &str, prefixo: &str) -> bool {
     s.len() == prefixo.len() + TAMANHO_TOKEN
         && s.starts_with(prefixo)
         && s[prefixo.len()..].chars().all(caractere_de_token)
+}
+
+pub fn sha256_hex(s: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(s.as_bytes());
+    h.finalize().iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 /// A chave da empresa como o admin a colou (espaços e quebras de linha das pontas fora),
@@ -298,6 +331,43 @@ pub fn cabecalho_segredo() -> String {
     }
 }
 
+/// O convite pendente, se válido; um valor estragado é apagado.
+pub fn convite_pendente() -> Option<String> {
+    let c = Config::get_option(OPCAO_CONVITE);
+    if c.is_empty() {
+        return None;
+    }
+    if token_valido(&c, PREFIXO_CONVITE) {
+        Some(c)
+    } else {
+        Config::set_option(OPCAO_CONVITE.to_owned(), "".to_owned());
+        None
+    }
+}
+
+/// O convite saiu do Infinity (aceito ou recusado): não volta a ser mandado.
+pub fn convite_entregue(convite: &str) {
+    Config::set_option(OPCAO_CONVITE_GASTO.to_owned(), sha256_hex(convite));
+    if Config::get_option(OPCAO_CONVITE) == convite {
+        Config::set_option(OPCAO_CONVITE.to_owned(), "".to_owned());
+    }
+}
+
+/// Grava um convite novo (do nome do instalador ou do link). Devolve false se o token
+/// é inválido ou já foi entregue.
+pub fn gravar_convite(convite: &str) -> bool {
+    if !token_valido(convite, PREFIXO_CONVITE) {
+        return false;
+    }
+    if Config::get_option(OPCAO_CONVITE_GASTO) == sha256_hex(convite) {
+        return false;
+    }
+    if Config::get_option(OPCAO_CONVITE) != convite {
+        Config::set_option(OPCAO_CONVITE.to_owned(), convite.to_owned());
+    }
+    true
+}
+
 /// O mapa de opções que chega pela IPC (`Data::Options`) vem inteiro da interface e pode
 /// estar atrasado em relação ao que o serviço acabou de gravar. O segredo só o serviço
 /// escreve: fica com o valor dele (a interface não o cria, troca nem apaga).
@@ -316,6 +386,14 @@ pub fn preservar_opcoes_do_servico(novas: &mut std::collections::HashMap<String,
         }
     };
     manter(novas, OPCAO_SEGREDO);
+    manter(novas, OPCAO_CONVITE_GASTO);
+    manter(novas, OPCAO_EMPRESA);
+    let gasto = Config::get_option(OPCAO_CONVITE_GASTO);
+    if let Some(c) = novas.get(OPCAO_CONVITE) {
+        if !c.is_empty() && !gasto.is_empty() && sha256_hex(c) == gasto {
+            novas.remove(OPCAO_CONVITE);
+        }
+    }
     let troca = novas
         .remove(OPCAO_TROCA_DE_CHAVE)
         .and_then(|c| chave_colada(&c));
@@ -324,6 +402,9 @@ pub fn preservar_opcoes_do_servico(novas: &mut std::collections::HashMap<String,
         Some(nova) if nova != chave_atual.trim() => {
             novas.insert(OPCAO_CHAVE.to_owned(), nova);
             novas.remove(OPCAO_SEGREDO);
+            // O nome e o consentimento eram da empresa antiga: na nova, pergunta de novo.
+            novas.remove(OPCAO_EMPRESA);
+            novas.remove(OPCAO_SEM_NINGUEM);
             log::info!("Infinity: chave da empresa trocada; o segredo será pedido de novo");
         }
         _ => {
@@ -385,9 +466,181 @@ pub async fn post_sysinfo(url: &str, corpo: String) -> ResultType<RespostaSysinf
             }
         }
     }
+    if let Some(e) = r.cabecalho(CABECALHO_EMPRESA) {
+        let nome = nome_de_empresa(e);
+        if !nome.is_empty() && Config::get_option(OPCAO_EMPRESA) != nome {
+            Config::set_option(OPCAO_EMPRESA.to_owned(), nome);
+        }
+    }
     Ok(RespostaSysinfo {
         texto: r.corpo.trim().to_owned(),
     })
+}
+/// O nome da empresa vem codificado em URL (cabeçalho HTTP é ASCII). Texto hostil: sem
+/// controle, até 80 caracteres.
+fn nome_de_empresa(cru: &str) -> String {
+    let decodificado = percent_decode(cru.trim());
+    decodificado
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(80)
+        .collect::<String>()
+        .trim()
+        .to_owned()
+}
+
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            // Pelos bytes: fatiar o &str no meio de um caractere multibyte entra em pânico.
+            let hex = std::str::from_utf8(&b[i + 1..i + 3]).ok();
+            if let Some(v) = hex.and_then(|h| u8::from_str_radix(h, 16).ok()) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// O consentimento "técnicos da empresa acessam sem alguém aqui" foi dado.
+pub fn consentimento_dado() -> bool {
+    Config::get_option(OPCAO_SEM_NINGUEM) == "Y"
+}
+
+/// Chegou conexão com prova e o consentimento está dado: o Infinity aprova?
+/// Ok(nome do técnico) ou Err(mensagem para mostrar a quem conecta).
+pub async fn autorizar_acesso(peer_id: &str, prova: &str) -> Result<String, String> {
+    if !token_valido(prova, PREFIXO_PROVA) {
+        return Err("A prova de acesso do Infinity é inválida.".to_owned());
+    }
+    let base = api_base();
+    if base.is_empty() {
+        return Err("Este computador não está ligado ao Infinity.".to_owned());
+    }
+    let corpo = json!({
+        "id": Config::get_id(),
+        "uuid": crate::encode64(hbb_common::get_uuid()),
+        "prova": prova,
+        "peer_id": peer_id,
+    })
+    .to_string();
+    let mut cabecalhos = Vec::new();
+    if let Some(s) = segredo() {
+        cabecalhos.push((CABECALHO_SEGREDO.to_owned(), s));
+    }
+    let r = match requisicao_estrita(
+        "post",
+        &format!("{}/api/autorizar-acesso", base),
+        Some(corpo),
+        &cabecalhos,
+        TEMPO_LIMITE,
+    )
+    .await
+    {
+        Ok(r) => r,
+        Err(_) => {
+            return Err("Não foi possível falar com o Infinity para autorizar o acesso.".to_owned())
+        }
+    };
+    let v: Value = serde_json::from_str(&r.corpo).unwrap_or(Value::Null);
+    if r.status == 200 && v["permitido"].as_bool() == Some(true) {
+        return Ok(v["tecnico"]["nome"].as_str().unwrap_or_default().to_owned());
+    }
+    let motivo = v["motivo"].as_str().unwrap_or_default().to_owned();
+    log::warn!(
+        "Infinity: acesso sem ninguém recusado (status {}, motivo {:?})",
+        r.status,
+        motivo
+    );
+    let mensagem = v["mensagem"]
+        .as_str()
+        .map(|s| {
+            s.chars()
+                .filter(|c| !c.is_control())
+                .take(200)
+                .collect::<String>()
+        })
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| {
+            "O Infinity não autorizou o acesso sem alguém no computador.".to_owned()
+        });
+    Err(mensagem)
+}
+
+// ───────────────────────────── lado do técnico ─────────────────────────────
+
+fn id_do_computador_valido(id: &str) -> bool {
+    (6..=12).contains(&id.len()) && id.chars().all(|c| c.is_ascii_digit())
+}
+
+fn uuid_valido(s: &str) -> bool {
+    s.len() == 36 && s.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+}
+
+fn pedido_para(rustdesk_id: &str) -> Option<String> {
+    let v = LocalConfig::get_option(OPCAO_LOCAL_PEDIDO);
+    let (id, pedido) = v.split_once(':')?;
+    if id != rustdesk_id {
+        return None;
+    }
+    LocalConfig::set_option(OPCAO_LOCAL_PEDIDO.to_owned(), "".to_owned());
+    if uuid_valido(pedido) {
+        Some(pedido.to_owned())
+    } else {
+        None
+    }
+}
+
+/// Antes de conectar: o técnico logado no Infinity pede a prova de acesso (vale 2 min, uso
+/// único) para este computador. Sem login, computador de outra empresa ou API fora do ar:
+/// None, e a conexão segue o fluxo normal (senha ou o Permitir de quem está no PC).
+pub async fn pedir_prova(rustdesk_id: &str) -> Option<String> {
+    if !id_do_computador_valido(rustdesk_id) {
+        return None;
+    }
+    let token = LocalConfig::get_option("access_token");
+    if !token.starts_with(PREFIXO_TOKEN_TECNICO) {
+        return None;
+    }
+    let base = api_base();
+    if base.is_empty() {
+        return None;
+    }
+    let mut corpo = json!({ "rustdesk_id": rustdesk_id });
+    if let Some(p) = pedido_para(rustdesk_id) {
+        corpo["pedido_id"] = json!(p);
+    }
+    let r = requisicao_estrita(
+        "post",
+        &format!("{}/api/acessos/prova", base),
+        Some(corpo.to_string()),
+        &[("Authorization".to_owned(), format!("Bearer {}", token))],
+        TEMPO_LIMITE_PROVA,
+    )
+    .await
+    .ok()?;
+    if r.status != 200 {
+        log::info!(
+            "Infinity: sem prova de acesso para esta conexão (status {})",
+            r.status
+        );
+        return None;
+    }
+    let v: Value = serde_json::from_str(&r.corpo).ok()?;
+    let prova = v["prova"].as_str()?.to_owned();
+    if token_valido(&prova, PREFIXO_PROVA) {
+        log::info!("Infinity: prova de acesso obtida para a conexão");
+        Some(prova)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -462,6 +715,35 @@ mod test {
             prefixo_de_url("https://A.b/c/").as_deref(),
             Some("https://a.b/c")
         );
+    }
+
+    #[test]
+    fn nome_da_empresa_decodificado_e_limpo() {
+        assert_eq!(nome_de_empresa("Acme%20Ltda"), "Acme Ltda");
+        assert_eq!(nome_de_empresa("Jo%C3%A3o%0A%0Dx"), "Joãox");
+        assert_eq!(nome_de_empresa("%"), "%");
+        assert_eq!(nome_de_empresa("a%2"), "a%2");
+        assert_eq!(nome_de_empresa("%aé"), "%aé");
+    }
+
+    #[test]
+    fn ids_e_pedidos() {
+        assert!(id_do_computador_valido("142098166"));
+        assert!(!id_do_computador_valido("12345"));
+        assert!(!id_do_computador_valido("12a456789"));
+        assert!(uuid_valido("3f0c0000-0000-4000-8000-000000000000"));
+        assert!(!uuid_valido("3f0c"));
+    }
+
+    #[test]
+    fn convite_no_formato() {
+        let c = format!("ric_{}", "A".repeat(43));
+        assert!(token_valido(&c, PREFIXO_CONVITE));
+        assert!(!token_valido(&c, PREFIXO_SEGREDO));
+        assert!(!token_valido(
+            &format!("ric_{}", "A".repeat(42)),
+            PREFIXO_CONVITE
+        ));
     }
 
     #[test]

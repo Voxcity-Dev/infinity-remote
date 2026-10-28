@@ -96,6 +96,8 @@ async fn start_hbbs_sync_async() {
     // sysinfo já, mesmo com ele em dia; recusada ou com falha, reenvia no ritmo normal (120 s).
     let mut chave_enviada: Option<String> = None;
     let mut chave_tentada: Option<String> = None;
+    // Infinity Remote: o convite já tentado neste processo (um convite novo força o reenvio).
+    let mut convite_tentado = "".to_owned();
     loop {
         tokio::select! {
             _ = interval.tick() => {
@@ -135,7 +137,11 @@ async fn start_hbbs_sync_async() {
                 let pode_repetir = info_uploaded.last_uploaded.map(|x| x.elapsed() >= UPLOAD_SYSINFO_TIMEOUT).unwrap_or(true);
                 let chave_nova = infinity_chave.is_some() && infinity_chave != chave_tentada;
                 let chave_pendente = infinity_chave.is_some() && infinity_chave != chave_enviada && pode_repetir;
-                let need_upload = chave_nova || chave_pendente || ((!info_uploaded.uploaded || info_uploaded.username.as_ref() != Some(&sys_username)) &&
+                // Infinity Remote: convite gravado agora (link infinity-remote://convite/...) é
+                // mandado já, mesmo com o sysinfo em dia.
+                let convite = crate::infinity::convite_pendente().unwrap_or_default();
+                let convite_novo = !convite.is_empty() && convite != convite_tentado;
+                let need_upload = chave_nova || chave_pendente || convite_novo || ((!info_uploaded.uploaded || info_uploaded.username.as_ref() != Some(&sys_username)) &&
                     info_uploaded.last_uploaded.map(|x| x.elapsed() >= UPLOAD_SYSINFO_TIMEOUT).unwrap_or(true));
                 if need_upload {
                     v["version"] = json!(crate::VERSION);
@@ -147,6 +153,11 @@ async fn start_hbbs_sync_async() {
                         v["infinity_chave"] = json!(chave);
                     }
                     chave_tentada = infinity_chave.clone();
+                    // Convite do ticket (ric_...): leva o computador à empresa do convite.
+                    if !convite.is_empty() {
+                        v["infinity_convite"] = json!(convite);
+                        convite_tentado = convite.clone();
+                    }
                     let ab_name = Config::get_option(keys::OPTION_PRESET_ADDRESS_BOOK_NAME);
                     if !ab_name.is_empty() {
                         v[keys::OPTION_PRESET_ADDRESS_BOOK_NAME] = json!(ab_name);
@@ -226,6 +237,15 @@ async fn start_hbbs_sync_async() {
                     // e a resposta traz o segredo no cabeçalho (crate::infinity::post_sysinfo).
                     match crate::infinity::post_sysinfo(&url.replace("heartbeat", "sysinfo"), v).await.map(|r| r.texto) {
                         Ok(x)  => {
+                            if !convite.is_empty() {
+                                // Aceito ou recusado, o convite não volta: o 1º sysinfo o gasta.
+                                crate::infinity::convite_entregue(&convite);
+                                if x == "SYSINFO_UPDATED" {
+                                    log::info!("Infinity: convite entregue e aceito");
+                                } else {
+                                    log::warn!("Infinity: convite recusado pelo Infinity ({})", x);
+                                }
+                            }
                             if x == "SYSINFO_UPDATED" {
                                 chave_enviada = chave_tentada.clone();
                                 info_uploaded = InfoUploaded::uploaded(url.clone(), id.clone(), sys_username);
@@ -235,7 +255,8 @@ async fn start_hbbs_sync_async() {
                                     config::Status::set("sysinfo_ver", sysinfo_ver.clone());
                                 }
                                 *PRO.lock().unwrap() = true;
-                            } else if x == "ID_NOT_FOUND" {
+                            } else if x == "ID_NOT_FOUND" || !convite.is_empty() {
+                                // Infinity Remote: convite recusado, tenta já de novo sem ele (chave ou segredo).
                                 info_uploaded.last_uploaded = None; // next heartbeat will upload sysinfo again
                             } else {
                                 info_uploaded.last_uploaded = Some(Instant::now());

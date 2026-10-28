@@ -779,5 +779,22 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("infinity-chave-trocar-dica", "Para trocar a empresa deste computador, desbloqueie Configurações › Segurança."),
         ("infinity-chave-trocar-empresa", "Trocar a empresa"),
         ("infinity-agora-nao", "Agora não"),
+        // Infinity Remote (#34135, Remote no ticket)
+        ("infinity-sem-ninguem-titulo", "Acesso sem ninguém no computador"),
+        ("infinity-sem-ninguem-permitir", "Permitir que os técnicos de {empresa} acessem este computador sem alguém aqui"),
+        ("infinity-sem-ninguem-permitir-generico", "Permitir que os técnicos da empresa que atende você acessem este computador sem alguém aqui"),
+        ("infinity-sem-ninguem-explicacao", "O Infinity só libera técnico ativo, com vaga e da mesma empresa deste computador. Cada acesso fica registrado, e você desliga isto quando quiser em Configurações › Segurança."),
+        ("infinity-sem-ninguem-dica", "Desligado, o técnico precisa da senha ou de alguém aqui para clicar em Permitir."),
+        ("infinity-permitir", "Permitir"),
+        ("infinity-convite-recebido", "Convite recebido. Em instantes este computador aparece no atendimento."),
+        ("infinity-convite-invalido", "Este link de convite não é válido."),
+        ("infinity-link-sem-computador", "Este link não traz o código do computador. No ticket, use \"Acessar pelo código\"."),
+        ("infinity-o-que-foi-feito", "O que foi feito?"),
+        ("infinity-o-que-foi-feito-dica", "Opcional. Vai para o resumo do atendimento no Infinity."),
+        ("infinity-o-que-foi-feito-exemplo", "Ex.: reinstalei o driver da impressora e imprimi uma página de teste."),
+        ("infinity-enviar-e-encerrar", "Enviar e encerrar"),
+        ("infinity-encerrar-sem-anotar", "Encerrar sem anotar"),
+        ("infinity-o-que-foi-feito-enviado", "Anotado no atendimento."),
+        ("infinity-falha-envio", "Não deu para enviar agora. Tente de novo ou encerre sem anotar."),
     ].iter().cloned().collect();
 }

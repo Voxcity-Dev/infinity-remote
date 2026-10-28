@@ -921,6 +921,7 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
               block: locked,
               child: Column(children: [
                 if (infinityComputadorNaEmpresa()) infinityTrocaDeEmpresa(),
+                if (infinityComputadorNaEmpresa()) infinity(context),
                 permissions(context),
                 password(context),
                 _Card(title: '2FA', children: [tfa()]),
@@ -1073,6 +1074,24 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
           return _Button('Change ID', changeIdDialog,
               enabled: !locked && model.connectStatus > 0);
         })));
+  }
+
+  // Infinity Remote: o consentimento "técnicos da empresa acessam sem alguém aqui",
+  // dado na pergunta única da janela principal e revogável aqui.
+  Widget infinity(context) {
+    bool enabled = !locked;
+    return _Card(title: 'Infinity Remote', children: [
+      _OptionCheckBox(context, infinityTextoDoConsentimento(),
+          kInfinityOpcaoSemNinguem,
+          enabled: enabled,
+          optGetter: infinityConsentimentoDado,
+          optSetter: (_, v) => infinityGravarConsentimento(v)),
+      Text(
+        translate('infinity-sem-ninguem-dica'),
+        style: TextStyle(
+            fontSize: 12, color: disabledTextColor(context, enabled)),
+      ).marginOnly(left: _kCheckBoxLeftMargin, top: 2),
+    ]);
   }
 
   Widget permissions(context) {

@@ -923,7 +923,7 @@ async fn handle(data: Data, stream: &mut Connection) {
                     crate::privacy_mode::switch(v);
                 }
                 // Infinity Remote: a interface manda o mapa inteiro (ui_interface::set_option),
-                // às vezes atrasado; o segredo, que só o serviço escreve, não volta atrás.
+                // às vezes atrasado; o segredo e o que o serviço escreve não voltam atrás.
                 crate::infinity::preservar_opcoes_do_servico(&mut value);
                 Config::set_options(value);
                 allow_err!(stream.send(&Data::Options(None)).await);

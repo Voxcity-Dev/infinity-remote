@@ -238,10 +238,28 @@ mod win {
         let _allow_err = std::fs::copy(src, &format!("{}\\{}", dir.to_string_lossy(), tgt));
     }
 
+    fn sem_convite(exe: &str) -> String {
+        let mut out = exe.to_owned();
+        if let Some(i) = out.find("ric_") {
+            let fim = out[i + 4..]
+                .char_indices()
+                .find(|(_, c)| !(c.is_ascii_alphanumeric() || *c == '_' || *c == '-'))
+                .map(|(j, _)| i + 4 + j)
+                .unwrap_or(out.len());
+            if fim - (i + 4) == 43 {
+                out.replace_range(i..fim, "");
+            }
+        }
+        out
+    }
+
     /// Check if the executable is a Quick Support version.
     /// Note: This function must be kept in sync with `src/core_main.rs`.
     #[inline]
     pub(super) fn is_quick_support_exe(exe: &str) -> bool {
+        // Infinity Remote: tira o token do convite (ric_ + 43) antes, para ele não virar
+        // "-qs-" por acaso (mesma regra de src/core_main.rs).
+        let exe = sem_convite(exe);
         let exe = exe.to_lowercase();
         exe.contains("-qs-") || exe.contains("-qs.exe") || exe.contains("_qs.exe")
     }
