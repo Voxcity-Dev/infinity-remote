@@ -335,15 +335,22 @@ pub fn preservar_opcoes_do_servico(novas: &mut std::collections::HashMap<String,
 }
 
 /// Caminho elevado (`--infinity-chave`): pede ao serviço, só pela IPC, a troca da chave da
-/// empresa. Diferente de `ipc::set_option`, não grava a config local deste processo (que
-/// guardaria o pedido de troca e o segredo antigo no arquivo).
+/// empresa. Diferente de `ipc::set_option`/`get_options`, não grava a config local deste
+/// processo (que guardaria o pedido de troca e o segredo ird_ no arquivo do admin).
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[tokio::main(flavor = "current_thread")]
 pub async fn pedir_troca_de_chave(chave: &str) -> ResultType<()> {
-    let mut opcoes = crate::ipc::get_options_async().await;
+    use crate::ipc::{connect, Data};
+    // Lê as opções do serviço direto pela IPC: `ipc::get_options_async` as gravaria na
+    // config deste processo (o admin), com o segredo ird_ junto.
+    let mut c = connect(1000, "").await?;
+    c.send(&Data::Options(None)).await?;
+    let Some(Data::Options(Some(mut opcoes))) = c.next_timeout(1000).await? else {
+        bail!("O serviço não respondeu");
+    };
     opcoes.insert(OPCAO_TROCA_DE_CHAVE.to_owned(), chave.to_owned());
-    let mut c = crate::ipc::connect(1000, "").await?;
-    c.send(&crate::ipc::Data::Options(Some(opcoes))).await?;
+    let mut c = connect(1000, "").await?;
+    c.send(&Data::Options(Some(opcoes))).await?;
     c.next_timeout(1000).await.ok();
     Ok(())
 }
