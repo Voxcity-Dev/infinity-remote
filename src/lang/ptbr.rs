@@ -765,5 +765,19 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("All monitors", "Todas as telas"),
         ("#{} monitor", "Tela {}"),
         ("conn-e2ee-unavailable-tip", "Não foi possível verificar a criptografia de ponta a ponta.\nO dispositivo remoto ainda pode estar sendo configurado. Tente novamente mais tarde.\nSe isso continuar acontecendo, o servidor pode não ser confiável.\nContinuar mesmo assim?"),
+        // Infinity Remote (#34135, chave da empresa)
+        ("infinity-chave-titulo", "Chave da empresa"),
+        ("infinity-chave-explicacao", "Cole a chave da empresa que aparece no Infinity, em Infinity Remote › Computadores › Adicionar computador. É ela que liga este computador à empresa."),
+        ("infinity-chave-invalida", "Essa não é uma chave da empresa. Ela começa com irk_ e tem 47 caracteres."),
+        ("infinity-chave-gravada", "Chave gravada. Em instantes este computador aparece no Infinity."),
+        ("infinity-chave-colar", "Colar a chave"),
+        ("infinity-chave-trocar", "Trocar a chave"),
+        ("infinity-chave-aviso", "Para a sua empresa acessar este computador pelo Infinity, cole a chave da empresa."),
+        ("infinity-chave-estado-vazia", "Este computador ainda não está ligado a uma empresa."),
+        ("infinity-chave-estado-aguardando", "Chave gravada. Aguardando o Infinity confirmar."),
+        ("infinity-chave-estado-ligado", "Este computador está ligado à empresa no Infinity."),
+        ("infinity-chave-trocar-dica", "Para trocar a empresa deste computador, desbloqueie Configurações › Segurança."),
+        ("infinity-chave-trocar-empresa", "Trocar a empresa"),
+        ("infinity-agora-nao", "Agora não"),
     ].iter().cloned().collect();
 }

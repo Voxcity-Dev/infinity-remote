@@ -279,6 +279,20 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("wayland-soft-keyboard-input-label", "Soft keyboard input"),
         ("wayland-keyboard-input-reset-choice-tip", "Reset keyboard input choice"),
         ("remember-wayland-keyboard-choice-tip", "Don't ask again for this remote computer"),
-        ("conn-e2ee-unavailable-tip", "Could not verify end-to-end encryption.\nThe remote device may still be setting up. Try again later.\nIf this keeps happening, the server may be untrusted.\nContinue anyway?")
+        ("conn-e2ee-unavailable-tip", "Could not verify end-to-end encryption.\nThe remote device may still be setting up. Try again later.\nIf this keeps happening, the server may be untrusted.\nContinue anyway?"),
+        // Infinity Remote (#34135, chave da empresa)
+        ("infinity-chave-titulo", "Company key"),
+        ("infinity-chave-explicacao", "Paste the company key shown in Infinity, under Infinity Remote › Computers › Add computer. It links this computer to the company."),
+        ("infinity-chave-invalida", "This is not a company key. It starts with irk_ and has 47 characters."),
+        ("infinity-chave-gravada", "Key saved. This computer will show up in Infinity in a moment."),
+        ("infinity-chave-colar", "Paste the key"),
+        ("infinity-chave-trocar", "Change the key"),
+        ("infinity-chave-aviso", "To let your company access this computer through Infinity, paste the company key."),
+        ("infinity-chave-estado-vazia", "This computer is not linked to a company yet."),
+        ("infinity-chave-estado-aguardando", "Key saved. Waiting for Infinity to confirm."),
+        ("infinity-chave-estado-ligado", "This computer is linked to the company in Infinity."),
+        ("infinity-chave-trocar-dica", "To move this computer to another company, unlock Settings › Security."),
+        ("infinity-chave-trocar-empresa", "Change the company"),
+        ("infinity-agora-nao", "Not now"),
     ].iter().cloned().collect();
 }

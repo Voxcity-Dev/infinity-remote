@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_hbb/common/infinity.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/common/widgets/audio_input.dart';
 import 'package:flutter_hbb/common/widgets/setting_widgets.dart';
@@ -415,6 +416,7 @@ class _GeneralState extends State<_General> {
     return ListView(
       controller: scrollController,
       children: [
+        if (!isWeb && !bind.isOutgoingOnly()) infinityChave(),
         if (!isWeb) service(),
         theme(),
         _Card(title: 'Language', children: [language()]),
@@ -425,6 +427,28 @@ class _GeneralState extends State<_General> {
         other()
       ],
     ).marginOnly(bottom: _kListViewBottomMargin);
+  }
+
+  // Infinity Remote: a chave da empresa (irk_) que o admin copia no assistente
+  // "Adicionar computador" do Infinity e cola aqui. O valor nunca aparece na tela.
+  // Com o computador numa empresa, trocar de empresa só em Segurança (desbloqueada).
+  Widget infinityChave() {
+    final naEmpresa = infinityComputadorNaEmpresa();
+    return _Card(title: 'infinity-chave-titulo', children: [
+      Text(
+        infinityEstadoDaChave(),
+        style: const TextStyle(fontSize: 13),
+      ).marginOnly(left: _kContentHMargin),
+      if (naEmpresa)
+        Text(
+          translate('infinity-chave-trocar-dica'),
+          style: TextStyle(fontSize: 12, color: disabledTextColor(context, false)),
+        ).marginOnly(left: _kContentHMargin, top: 4)
+      else
+        _Button(
+            infinityTemChave() ? 'infinity-chave-trocar' : 'infinity-chave-colar',
+            () => infinityPedirChave(depois: () => setState(() {}))),
+    ]);
   }
 
   Widget theme() {
@@ -896,6 +920,7 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
             preventMouseKeyBuilder(
               block: locked,
               child: Column(children: [
+                if (infinityComputadorNaEmpresa()) infinityTrocaDeEmpresa(),
                 permissions(context),
                 password(context),
                 _Card(title: '2FA', children: [tfa()]),
@@ -906,6 +931,20 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
             ),
           ],
         )).marginOnly(bottom: _kListViewBottomMargin);
+  }
+
+  // Infinity Remote: trocar a empresa deste computador (caminho elevado: atrás do
+  // "Desbloquear configurações de segurança"). O serviço apaga o segredo e pede um novo.
+  Widget infinityTrocaDeEmpresa() {
+    return _Card(title: 'infinity-chave-titulo', children: [
+      Text(
+        infinityEstadoDaChave(),
+        style: const TextStyle(fontSize: 13),
+      ).marginOnly(left: _kContentHMargin),
+      _Button('infinity-chave-trocar-empresa',
+          () => infinityPedirChave(troca: true, depois: () => setState(() {})),
+          enabled: !locked),
+    ]);
   }
 
   Widget tfa() {

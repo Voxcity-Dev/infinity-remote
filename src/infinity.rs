@@ -3,18 +3,27 @@
 //!
 //! - Segredo do computador (`ird_`): pedido com `x-infinity-segredo: novo` no sysinfo,
 //!   guardado na config e mandado em sysinfo, heartbeat e auditoria de conexão.
+//! - Chave da empresa (`irk_`): colada pelo admin em Configurações (ou no aviso da janela
+//!   principal) ou gravada por `--infinity-chave` na instalação em massa. O servidor
+//!   (rendezvous, chave pública e API) é sempre o do build: nada disso vem de fora.
 //! - Endurecimento: chamada à API do Infinity só com certificado verificado e nunca pelo
 //!   desvio TCP do servidor de rendezvous (o upstream faz as duas coisas quando o HTTPS falha:
 //!   a primeira com `allow-insecure-tls-fallback`, a segunda por padrão).
 //!
 //! Nenhum valor de chave, segredo ou token vai para log.
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use hbb_common::tokio;
 use hbb_common::{anyhow::anyhow, bail, config::Config, log, tls::TlsType, ResultType};
 use serde_json::{json, Map, Value};
 use std::time::Duration;
 
-/// Chave de instalação da empresa (`irk_…`).
+/// Chave de instalação da empresa (`irk_…`). Nunca em log.
 pub const OPCAO_CHAVE: &str = "infinity-chave";
+/// Troca de empresa pelo caminho elevado (`--infinity-chave` como admin, ou o cartão de
+/// Segurança desbloqueado): o serviço grava a chave nova e apaga o segredo, que é pedido de
+/// novo. Nunca fica guardada.
+pub const OPCAO_TROCA_DE_CHAVE: &str = "infinity-chave-troca";
 /// Segredo do computador (`ird_…`). Só o serviço escreve. Nunca em log.
 pub const OPCAO_SEGREDO: &str = "infinity-segredo";
 
@@ -22,6 +31,7 @@ pub const CABECALHO_SEGREDO: &str = "x-infinity-segredo";
 const PEDIDO_DE_SEGREDO: &str = "novo";
 
 pub const PREFIXO_SEGREDO: &str = "ird_";
+pub const PREFIXO_CHAVE: &str = "irk_";
 /// 32 bytes em base64url sem preenchimento.
 const TAMANHO_TOKEN: usize = 43;
 
@@ -37,6 +47,35 @@ pub fn token_valido(s: &str, prefixo: &str) -> bool {
     s.len() == prefixo.len() + TAMANHO_TOKEN
         && s.starts_with(prefixo)
         && s[prefixo.len()..].chars().all(caractere_de_token)
+}
+
+/// A chave da empresa como o admin a colou (espaços e quebras de linha das pontas fora),
+/// se tiver o formato `irk_` + 43 caracteres base64url.
+pub fn chave_colada(s: &str) -> Option<String> {
+    let s = s.trim();
+    if token_valido(s, PREFIXO_CHAVE) {
+        Some(s.to_owned())
+    } else {
+        None
+    }
+}
+
+/// A chave guardada que vai no sysinfo (valor fora do formato não sai do computador).
+pub fn chave() -> Option<String> {
+    chave_colada(&Config::get_option(OPCAO_CHAVE))
+}
+
+/// O build traz o servidor (RENDEZVOUS_SERVER): rendezvous, relay, chave pública e API não
+/// vêm de fora (nome do executável, `--config`, `--option`, `--import-config`, IPC ou
+/// registro): as opções `custom-rendezvous-server`, `relay-server`, `key` e `api-server`
+/// são ignoradas.
+pub fn servidor_so_do_build() -> bool {
+    option_env!("RENDEZVOUS_SERVER").map_or(false, |s| !s.trim().is_empty())
+}
+
+/// A API do Infinity do build (API_SERVER), se houver: vence qualquer opção `api-server`.
+pub fn api_do_build() -> Option<&'static str> {
+    option_env!("API_SERVER").filter(|s| !s.trim().is_empty())
 }
 
 /// A URL base da API do Infinity (a mesma que o upstream usa para sysinfo e auditoria).
@@ -262,15 +301,51 @@ pub fn cabecalho_segredo() -> String {
 /// O mapa de opções que chega pela IPC (`Data::Options`) vem inteiro da interface e pode
 /// estar atrasado em relação ao que o serviço acabou de gravar. O segredo só o serviço
 /// escreve: fica com o valor dele (a interface não o cria, troca nem apaga).
+///
+/// A chave da empresa: com o computador numa empresa (há segredo), a interface não a troca
+/// pelo mapa (fica a do serviço). Trocar de empresa só por `OPCAO_TROCA_DE_CHAVE`, que vem
+/// do caminho elevado: grava a chave nova e apaga o segredo (o próximo sysinfo pede um
+/// novo). A troca com a mesma chave de hoje é ignorada (a interface pode reenviar o mapa).
 pub fn preservar_opcoes_do_servico(novas: &mut std::collections::HashMap<String, String>) {
-    for k in [OPCAO_SEGREDO] {
+    let manter = |novas: &mut std::collections::HashMap<String, String>, k: &str| {
         let atual = Config::get_option(k);
         if atual.is_empty() {
             novas.remove(k);
         } else {
             novas.insert(k.to_owned(), atual);
         }
+    };
+    manter(novas, OPCAO_SEGREDO);
+    let troca = novas
+        .remove(OPCAO_TROCA_DE_CHAVE)
+        .and_then(|c| chave_colada(&c));
+    let chave_atual = Config::get_option(OPCAO_CHAVE);
+    match troca {
+        Some(nova) if nova != chave_atual.trim() => {
+            novas.insert(OPCAO_CHAVE.to_owned(), nova);
+            novas.remove(OPCAO_SEGREDO);
+            log::info!("Infinity: chave da empresa trocada; o segredo será pedido de novo");
+        }
+        _ => {
+            if segredo().is_some() {
+                manter(novas, OPCAO_CHAVE);
+            }
+        }
     }
+}
+
+/// Caminho elevado (`--infinity-chave`): pede ao serviço, só pela IPC, a troca da chave da
+/// empresa. Diferente de `ipc::set_option`, não grava a config local deste processo (que
+/// guardaria o pedido de troca e o segredo antigo no arquivo).
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[tokio::main(flavor = "current_thread")]
+pub async fn pedir_troca_de_chave(chave: &str) -> ResultType<()> {
+    let mut opcoes = crate::ipc::get_options_async().await;
+    opcoes.insert(OPCAO_TROCA_DE_CHAVE.to_owned(), chave.to_owned());
+    let mut c = crate::ipc::connect(1000, "").await?;
+    c.send(&crate::ipc::Data::Options(Some(opcoes))).await?;
+    c.next_timeout(1000).await.ok();
+    Ok(())
 }
 
 pub struct RespostaSysinfo {
@@ -330,6 +405,21 @@ mod test {
             PREFIXO_SEGREDO
         ));
         assert!(!token_valido(PEDIDO_DE_SEGREDO, PREFIXO_SEGREDO));
+    }
+
+    #[test]
+    fn chave_da_empresa() {
+        let corpo = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_abcde";
+        let k = format!("irk_{}", corpo);
+        assert_eq!(chave_colada(&k).as_deref(), Some(k.as_str()));
+        assert_eq!(
+            chave_colada(&format!("  {}\r\n", k)).as_deref(),
+            Some(k.as_str())
+        );
+        assert!(chave_colada(&format!("ird_{}", corpo)).is_none());
+        assert!(chave_colada(&format!("irk_{}x", corpo)).is_none());
+        assert!(chave_colada(&format!("irk_{} host=evil", corpo)).is_none());
+        assert!(chave_colada("").is_none());
     }
 
     #[test]

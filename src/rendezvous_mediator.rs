@@ -823,7 +823,12 @@ impl RendezvousMediator {
     }
 
     fn get_relay_server(&self, provided_by_rendezvous_server: String) -> String {
-        let mut relay_server = Config::get_option("relay-server");
+        // Infinity Remote: com o servidor no build, a opção relay-server não troca o relay.
+        let mut relay_server = if crate::infinity::servidor_so_do_build() {
+            String::new()
+        } else {
+            Config::get_option("relay-server")
+        };
         if relay_server.is_empty() {
             relay_server = provided_by_rendezvous_server;
         }

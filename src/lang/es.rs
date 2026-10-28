@@ -765,5 +765,19 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("All monitors", "Todos los monitores"),
         ("#{} monitor", "Monitor {}"),
         ("conn-e2ee-unavailable-tip", "No se pudo verificar el cifrado de extremo a extremo.\nEs posible que el dispositivo remoto aún se esté configurando. Inténtelo de nuevo más tarde.\nSi esto sigue ocurriendo, es posible que el servidor no sea de confianza.\n¿Continuar de todos modos?"),
+        // Infinity Remote (#34135, chave da empresa)
+        ("infinity-chave-titulo", "Clave de la empresa"),
+        ("infinity-chave-explicacao", "Pegue la clave de la empresa que aparece en Infinity, en Infinity Remote › Computadoras › Agregar computadora. Es la que vincula esta computadora a la empresa."),
+        ("infinity-chave-invalida", "Esta no es una clave de empresa. Empieza con irk_ y tiene 47 caracteres."),
+        ("infinity-chave-gravada", "Clave guardada. En unos instantes esta computadora aparecerá en Infinity."),
+        ("infinity-chave-colar", "Pegar la clave"),
+        ("infinity-chave-trocar", "Cambiar la clave"),
+        ("infinity-chave-aviso", "Para que su empresa acceda a esta computadora por Infinity, pegue la clave de la empresa."),
+        ("infinity-chave-estado-vazia", "Esta computadora aún no está vinculada a una empresa."),
+        ("infinity-chave-estado-aguardando", "Clave guardada. Esperando la confirmación de Infinity."),
+        ("infinity-chave-estado-ligado", "Esta computadora está vinculada a la empresa en Infinity."),
+        ("infinity-chave-trocar-dica", "Para cambiar la empresa de esta computadora, desbloquee Configuración › Seguridad."),
+        ("infinity-chave-trocar-empresa", "Cambiar la empresa"),
+        ("infinity-agora-nao", "Ahora no"),
     ].iter().cloned().collect();
 }

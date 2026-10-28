@@ -1039,6 +1039,11 @@ pub fn is_setup(name: &str) -> bool {
 }
 
 pub fn get_custom_rendezvous_server(custom: String) -> String {
+    // Infinity Remote: com o servidor no build, a opção (de --option, --import-config, IPC
+    // ou registro) e o nome do executável não o trocam.
+    if crate::infinity::servidor_so_do_build() {
+        return config::RENDEZVOUS_SERVERS[0].to_owned();
+    }
     #[cfg(windows)]
     if let Ok(lic) = crate::platform::windows::get_license_from_exe_name() {
         if !lic.host.is_empty() {
@@ -1073,6 +1078,13 @@ pub fn get_api_server(api: String, custom: String) -> String {
 }
 
 fn get_api_server_(api: String, custom: String) -> String {
+    // Infinity Remote: a API do Infinity do build (API_SERVER, option_env!) vence tudo: a
+    // opção "api-server" (de --option, --import-config, IPC ou registro), o nome do
+    // executável e a derivação http://<rendezvous>:21114, que não existe (timeout em loop).
+    // A opção "api-server" só vale em build sem API_SERVER.
+    if let Some(s) = crate::infinity::api_do_build() {
+        return s.to_owned();
+    }
     #[cfg(windows)]
     if let Ok(lic) = crate::platform::windows::get_license_from_exe_name() {
         if !lic.api.is_empty() {
@@ -1081,15 +1093,6 @@ fn get_api_server_(api: String, custom: String) -> String {
     }
     if !api.is_empty() {
         return api.to_owned();
-    }
-    // Infinity Remote: a API do Infinity (API_SERVER do ambiente de build, option_env!)
-    // vence a derivação do servidor de rendezvous. Sem isso, quem grava
-    // custom-rendezvous-server cai em http://<rendezvous>:21114/api, que não existe
-    // (timeout em loop). A opção "api-server" explícita continua vencendo.
-    if let Some(s) = option_env!("API_SERVER") {
-        if !s.is_empty() {
-            return s.to_owned();
-        }
     }
     let s0 = get_custom_rendezvous_server(custom);
     if !s0.is_empty() {
@@ -1844,6 +1847,11 @@ pub fn decode64<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, base64::DecodeError
 }
 
 pub async fn get_key(sync: bool) -> String {
+    // Infinity Remote: com o servidor no build, a chave pública é a do build (RS_PUB_KEY);
+    // a opção "key" não a troca.
+    if crate::infinity::servidor_so_do_build() {
+        return config::RS_PUB_KEY.to_owned();
+    }
     #[cfg(windows)]
     if let Ok(lic) = crate::platform::windows::get_license_from_exe_name() {
         if !lic.key.is_empty() {

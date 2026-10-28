@@ -91,6 +91,11 @@ async fn start_hbbs_sync_async() {
     let mut last_sent: Option<Instant> = None;
     let mut info_uploaded = InfoUploaded::default();
     let mut sysinfo_ver = "".to_owned();
+    // Infinity Remote: a chave da empresa do último sysinfo ACEITO (SYSINFO_UPDATED) e a do
+    // último tentado. Chave nova (colada em Configurações ou por --infinity-chave) reenvia o
+    // sysinfo já, mesmo com ele em dia; recusada ou com falha, reenvia no ritmo normal (120 s).
+    let mut chave_enviada: Option<String> = None;
+    let mut chave_tentada: Option<String> = None;
     loop {
         tokio::select! {
             _ = interval.tick() => {
@@ -126,18 +131,22 @@ async fn start_hbbs_sync_async() {
                 let sys_username = v["username"].as_str().unwrap_or_default().to_string();
                 // Though the username comparison is only necessary on Windows,
                 // we still keep the comparison on other platforms for consistency.
-                let need_upload = (!info_uploaded.uploaded || info_uploaded.username.as_ref() != Some(&sys_username)) &&
-                    info_uploaded.last_uploaded.map(|x| x.elapsed() >= UPLOAD_SYSINFO_TIMEOUT).unwrap_or(true);
+                let infinity_chave = crate::infinity::chave();
+                let pode_repetir = info_uploaded.last_uploaded.map(|x| x.elapsed() >= UPLOAD_SYSINFO_TIMEOUT).unwrap_or(true);
+                let chave_nova = infinity_chave.is_some() && infinity_chave != chave_tentada;
+                let chave_pendente = infinity_chave.is_some() && infinity_chave != chave_enviada && pode_repetir;
+                let need_upload = chave_nova || chave_pendente || ((!info_uploaded.uploaded || info_uploaded.username.as_ref() != Some(&sys_username)) &&
+                    info_uploaded.last_uploaded.map(|x| x.elapsed() >= UPLOAD_SYSINFO_TIMEOUT).unwrap_or(true));
                 if need_upload {
                     v["version"] = json!(crate::VERSION);
                     v["id"] = json!(id);
                     v["uuid"] = json!(crate::encode64(hbb_common::get_uuid()));
                     // Infinity Remote: chave de instalação da empresa (irk_...). O core
                     // usa para registrar o computador na empresa (contrato-api-cliente.md).
-                    let infinity_chave = Config::get_option(crate::infinity::OPCAO_CHAVE);
-                    if !infinity_chave.is_empty() {
-                        v["infinity_chave"] = json!(infinity_chave);
+                    if let Some(chave) = infinity_chave.as_ref() {
+                        v["infinity_chave"] = json!(chave);
                     }
+                    chave_tentada = infinity_chave.clone();
                     let ab_name = Config::get_option(keys::OPTION_PRESET_ADDRESS_BOOK_NAME);
                     if !ab_name.is_empty() {
                         v[keys::OPTION_PRESET_ADDRESS_BOOK_NAME] = json!(ab_name);
@@ -218,6 +227,7 @@ async fn start_hbbs_sync_async() {
                     match crate::infinity::post_sysinfo(&url.replace("heartbeat", "sysinfo"), v).await.map(|r| r.texto) {
                         Ok(x)  => {
                             if x == "SYSINFO_UPDATED" {
+                                chave_enviada = chave_tentada.clone();
                                 info_uploaded = InfoUploaded::uploaded(url.clone(), id.clone(), sys_username);
                                 log::info!("sysinfo updated");
                                 if !hash.is_empty() {

@@ -493,7 +493,34 @@ pub fn core_main() -> Option<Vec<String>> {
                 }
             }
             return None;
+        } else if args[0] == "--infinity-chave" {
+            // Infinity Remote: instalação em massa e troca de empresa (caminho elevado: instalado
+            // e como admin). O serviço grava a chave da empresa (irk_), apaga o segredo do
+            // computador se a chave mudou e reenvia o sysinfo no próximo ciclo. Só a chave entra.
+            if is_cli_setting_change_disabled() {
+                println!("Settings are disabled!");
+                return None;
+            }
+            if args.len() == 2 {
+                if crate::platform::is_installed() && is_root() {
+                    match crate::infinity::chave_colada(&args[1]) {
+                        Some(chave) => match crate::infinity::pedir_troca_de_chave(&chave) {
+                            Ok(()) => println!("Done!"),
+                            Err(_) => println!("Failed to reach the service"),
+                        },
+                        None => println!("Invalid company key (irk_...)"),
+                    }
+                } else {
+                    println!("Installation and administrative privileges required!");
+                }
+            }
+            return None;
         } else if args[0] == "--config" {
+            // Infinity Remote: o servidor é o do build; --config com servidor não o troca.
+            if crate::infinity::servidor_so_do_build() {
+                println!("Server settings are fixed in this build!");
+                return None;
+            }
             if args.len() == 2 && !args[0].contains("host=") {
                 if crate::platform::is_installed() && is_root() {
                     // encrypted string used in renaming exe.
@@ -918,6 +945,7 @@ fn is_user_main_ipc_scope_cli_command(args: &[String]) -> bool {
             | Some("--set-id")
             | Some("--config")
             | Some("--option")
+            | Some("--infinity-chave")
             | Some("--assign")
             | Some("--deploy")
     )
@@ -965,6 +993,7 @@ mod tests {
             "--set-id",
             "--config",
             "--option",
+            "--infinity-chave",
             "--assign",
             "--deploy",
         ] {

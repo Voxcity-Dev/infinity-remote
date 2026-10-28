@@ -27,6 +27,8 @@ jobs:
           for v in RENDEZVOUS_SERVER RS_PUB_KEY API_SERVER; do
             [ -n "${!v}" ] || { echo "vars.$v vazio"; exit 1; }
           done
+          # Infinity Remote: a API do Infinity só por HTTPS (o cliente recusa http: src/infinity.rs).
+          case "$API_SERVER" in https://*) ;; *) echo "vars.API_SERVER tem de começar com https://"; exit 1;; esac
           echo "RENDEZVOUS_SERVER len=${#RENDEZVOUS_SERVER}; RS_PUB_KEY len=${#RS_PUB_KEY}; API_SERVER len=${#API_SERVER}"
 
       - name: Maximize build space

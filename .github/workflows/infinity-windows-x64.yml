@@ -44,6 +44,8 @@ jobs:
           [ -n "$RENDEZVOUS_SERVER" ] || { echo "vars.RENDEZVOUS_SERVER vazio"; exit 1; }
           [ -n "$RS_PUB_KEY" ] || { echo "vars.RS_PUB_KEY vazio"; exit 1; }
           [ -n "$API_SERVER" ] || { echo "vars.API_SERVER vazio (sem ele o cliente cai em http://<rendezvous>:21114)"; exit 1; }
+          # Infinity Remote: a API do Infinity só por HTTPS (o cliente recusa http: src/infinity.rs).
+          case "$API_SERVER" in https://*) ;; *) echo "vars.API_SERVER tem de começar com https://"; exit 1;; esac
           echo "RENDEZVOUS_SERVER len=${#RENDEZVOUS_SERVER}; RS_PUB_KEY len=${#RS_PUB_KEY}; API_SERVER len=${#API_SERVER}"
 
       - name: Export GitHub Actions cache environment variables
