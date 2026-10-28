@@ -1427,6 +1427,12 @@ where
 /// - 4xx responses are returned as-is (server is reachable, business logic error).
 /// - If fallback also fails, returns the original HTTP result (text or error).
 pub async fn post_request(url: String, body: String, header: &str) -> ResultType<String> {
+    // Infinity Remote: para a API do Infinity (chave irk_, segredo ird_ e token irm_ no
+    // corpo ou no cabeçalho) não há repetição aceitando certificado inválido nem desvio
+    // pelo servidor de rendezvous.
+    if crate::infinity::eh_api_do_infinity(&url) {
+        return crate::infinity::post_estrito(&url, body, header).await;
+    }
     with_tcp_proxy_fallback(
         &url,
         "POST",
@@ -1682,6 +1688,11 @@ pub async fn http_request_sync(
     body: Option<String>,
     header: String,
 ) -> ResultType<String> {
+    // Infinity Remote: login, agenda e demais chamadas do técnico vão à API do Infinity sem
+    // certificado inválido e sem o desvio pelo rendezvous (ver post_request).
+    if crate::infinity::eh_api_do_infinity(&url) {
+        return crate::infinity::http_estrito(&url, &method, body, &header).await;
+    }
     with_tcp_proxy_fallback(
         &url,
         &method,
