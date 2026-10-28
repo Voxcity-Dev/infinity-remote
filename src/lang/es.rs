@@ -765,5 +765,23 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("All monitors", "Todos los monitores"),
         ("#{} monitor", "Monitor {}"),
         ("conn-e2ee-unavailable-tip", "No se pudo verificar el cifrado de extremo a extremo.\nEs posible que el dispositivo remoto aún se esté configurando. Inténtelo de nuevo más tarde.\nSi esto sigue ocurriendo, es posible que el servidor no sea de confianza.\n¿Continuar de todos modos?"),
+        // Infinity Remote (#34135, Remote no ticket)
+        ("infinity-sem-ninguem-titulo", "Acceso sin nadie en el equipo"),
+        ("infinity-sem-ninguem-permitir", "Permitir que los técnicos de {empresa} accedan a este equipo sin nadie presente"),
+        ("infinity-sem-ninguem-permitir-generico", "Permitir que los técnicos de la empresa que le da soporte accedan a este equipo sin nadie presente"),
+        ("infinity-sem-ninguem-explicacao", "Infinity solo deja entrar a técnicos activos, con plaza y de la misma empresa que este equipo. Cada acceso queda registrado y puede desactivarlo cuando quiera en Configuración › Seguridad."),
+        ("infinity-sem-ninguem-dica", "Desactivado, el técnico necesita la contraseña o que alguien aquí haga clic en Aceptar."),
+        ("infinity-permitir", "Permitir"),
+        ("infinity-agora-nao", "Ahora no"),
+        ("infinity-convite-recebido", "Invitación recibida. En unos instantes este equipo aparecerá en la atención."),
+        ("infinity-convite-invalido", "Este enlace de invitación no es válido."),
+        ("infinity-link-sem-computador", "Este enlace no trae el código del equipo. En el ticket, use \"Acceder por código\"."),
+        ("infinity-o-que-foi-feito", "¿Qué se hizo?"),
+        ("infinity-o-que-foi-feito-dica", "Opcional. Va al resumen de la atención en Infinity."),
+        ("infinity-o-que-foi-feito-exemplo", "Ej.: reinstalé el controlador de la impresora e imprimí una página de prueba."),
+        ("infinity-enviar-e-encerrar", "Enviar y cerrar"),
+        ("infinity-encerrar-sem-anotar", "Cerrar sin anotar"),
+        ("infinity-o-que-foi-feito-enviado", "Anotado en la atención."),
+        ("infinity-falha-envio", "No se pudo enviar ahora. Inténtelo de nuevo o cierre sin anotar."),
     ].iter().cloned().collect();
 }

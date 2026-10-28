@@ -160,6 +160,16 @@ pub fn core_main() -> Option<Vec<String>> {
     }
     hbb_common::init_log(false, &log_name);
 
+    // Infinity Remote: instalador baixado pelo convite do ticket (infinity-remote-ric_<token>.exe).
+    // Grava a opção infinity-convite; o próximo sysinfo a entrega ao Infinity e a apaga. O
+    // instalador copia esta config para o serviço (--import-config).
+    #[cfg(windows)]
+    if let Some(convite) = crate::platform::windows::get_convite_from_exe_name() {
+        if crate::infinity::gravar_convite(&convite) {
+            log::info!("Infinity: convite do nome do instalador gravado");
+        }
+    }
+
     // linux uni (url) go here.
     #[cfg(all(target_os = "linux", feature = "flutter"))]
     if args.len() > 0 && args[0].starts_with(&crate::get_uri_prefix()) {
@@ -989,6 +999,11 @@ mod tests {
 #[cfg(windows)]
 #[inline]
 fn is_quick_support_exe(exe: &str) -> bool {
+    // Infinity Remote: o token do convite (ric_...) no nome não pode virar "-qs-" por acaso.
+    let exe = match crate::custom_server::get_convite_from_string(exe) {
+        Some(convite) => exe.replace(&convite, ""),
+        None => exe.to_owned(),
+    };
     let exe = exe.to_lowercase();
     exe.contains("-qs-") || exe.contains("-qs.exe") || exe.contains("_qs.exe")
 }

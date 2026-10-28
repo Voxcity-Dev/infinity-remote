@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:bot_toast/bot_toast.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_hbb/common/infinity.dart';
 import 'package:flutter_hbb/common/shared_state.dart';
 import 'package:flutter_hbb/common/widgets/setting_widgets.dart';
 import 'package:flutter_hbb/consts.dart';
@@ -1617,7 +1618,9 @@ Future<bool> desktopTryShowTabAuditDialogCloseCancelled(
         tabController.state.value.tabs.firstWhere((tab) => tab.key == id).page;
     final ffi = (page as dynamic).ffi;
     final res = await showConnEndAuditDialogCloseCanceled(ffi: ffi);
-    return res;
+    if (res) return res;
+    // Infinity Remote: "O que foi feito?" para o resumo do atendimento no ticket.
+    return await infinityPerguntarOQueFoiFeito(ffi, id);
   } catch (e) {
     debugPrint('Failed to show audit dialog: $e');
     return false;

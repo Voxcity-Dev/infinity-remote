@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_hbb/common/infinity.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/common/widgets/audio_input.dart';
 import 'package:flutter_hbb/common/widgets/setting_widgets.dart';
@@ -896,6 +897,7 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
             preventMouseKeyBuilder(
               block: locked,
               child: Column(children: [
+                if (infinityComputadorNaEmpresa()) infinity(context),
                 permissions(context),
                 password(context),
                 _Card(title: '2FA', children: [tfa()]),
@@ -1034,6 +1036,24 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
           return _Button('Change ID', changeIdDialog,
               enabled: !locked && model.connectStatus > 0);
         })));
+  }
+
+  // Infinity Remote: o consentimento "técnicos da empresa acessam sem alguém aqui",
+  // dado na pergunta única da janela principal e revogável aqui.
+  Widget infinity(context) {
+    bool enabled = !locked;
+    return _Card(title: 'Infinity Remote', children: [
+      _OptionCheckBox(context, infinityTextoDoConsentimento(),
+          kInfinityOpcaoSemNinguem,
+          enabled: enabled,
+          optGetter: infinityConsentimentoDado,
+          optSetter: (_, v) => infinityGravarConsentimento(v)),
+      Text(
+        translate('infinity-sem-ninguem-dica'),
+        style: TextStyle(
+            fontSize: 12, color: disabledTextColor(context, enabled)),
+      ).marginOnly(left: _kCheckBoxLeftMargin, top: 2),
+    ]);
   }
 
   Widget permissions(context) {

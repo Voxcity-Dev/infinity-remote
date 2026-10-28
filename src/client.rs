@@ -1775,6 +1775,8 @@ pub struct LoginConfigHandler {
     pub enable_trusted_devices: bool,
     pub record_state: bool,
     pub record_permission: bool,
+    // Infinity Remote: prova de acesso (irp_) para o próximo LoginRequest; uso único.
+    infinity_prova: String,
 }
 
 impl Deref for LoginConfigHandler {
@@ -2741,6 +2743,7 @@ impl LoginConfigHandler {
             .into(),
             hwid,
             avatar,
+            infinity_prova: self.infinity_prova.clone(),
             ..Default::default()
         };
         match self.conn_type {
@@ -3593,6 +3596,18 @@ pub async fn handle_hash(
         )
     };
 
+    // Infinity Remote: o técnico logado no Infinity leva a prova de acesso (irp_) no login;
+    // o computador com o consentimento "acesso sem alguém aqui" a confere no Infinity.
+    // Sem login, sem vaga ou computador de outra empresa: sem prova, fluxo normal.
+    let (peer_id, outro_servidor) = {
+        let lc = lc.read().unwrap();
+        (lc.id.clone(), lc.other_server.is_some())
+    };
+    if !outro_servidor && !is_terminal {
+        let prova = crate::infinity::pedir_prova(&peer_id).await.unwrap_or_default();
+        lc.write().unwrap().infinity_prova = prova;
+    }
+
     send_login(lc.clone(), os_username, os_password, password, peer).await;
     lc.write().unwrap().hash = hash;
 }
@@ -3642,6 +3657,8 @@ async fn send_login(
         .read()
         .unwrap()
         .create_login_msg(os_username, os_password, password);
+    // Infinity Remote: a prova é de uso único; o próximo login (senha digitada) vai sem ela.
+    lc.write().unwrap().infinity_prova.clear();
     allow_err!(peer.send(&msg_out).await);
 }
 

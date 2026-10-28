@@ -2123,13 +2123,32 @@ pub fn prepare_custom_client_update() -> ResultType<bool> {
     Ok(true)
 }
 
-pub fn get_license_from_exe_name() -> ResultType<CustomServer> {
+fn exe_name_for_license() -> ResultType<String> {
     let mut exe = std::env::current_exe()?.to_str().unwrap_or("").to_owned();
     // if defined portable appname entry, replace original executable name with it.
     if let Ok(portable_exe) = std::env::var(PORTABLE_APPNAME_RUNTIME_ENV_KEY) {
         exe = portable_exe;
     }
+    Ok(exe)
+}
+
+pub fn get_license_from_exe_name() -> ResultType<CustomServer> {
+    // Infinity Remote: o servidor (rendezvous, chave pública e API) é o do build. Um exe
+    // renomeado com host=/key=/api= ou com config codificada não o troca, e o nome com o
+    // convite do ticket (ric_...) só leva o convite.
+    if option_env!("RENDEZVOUS_SERVER").map_or(false, |s| !s.is_empty()) {
+        bail!("Infinity Remote: servidor só do build");
+    }
+    let exe = exe_name_for_license()?;
+    if get_convite_from_string(&exe).is_some() {
+        bail!("Infinity Remote: nome com convite não leva servidor");
+    }
     get_custom_server_from_string(&exe)
+}
+
+/// Infinity Remote: o convite do ticket no nome do instalador (`infinity-remote-ric_<token>.exe`).
+pub fn get_convite_from_exe_name() -> Option<String> {
+    get_convite_from_string(&exe_name_for_license().ok()?)
 }
 
 // We can't directly use `RegKey::set_value` to update the registry value, because it will fail with `ERROR_ACCESS_DENIED`

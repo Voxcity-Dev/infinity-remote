@@ -1535,7 +1535,8 @@ impl Connection {
 
     #[inline]
     async fn post_audit_async(url: String, v: Value) -> ResultType<String> {
-        crate::post_request(url, v.to_string(), "").await
+        // Infinity Remote: a auditoria leva o segredo do computador (x-infinity-segredo).
+        crate::post_request(url, v.to_string(), &crate::infinity::cabecalho_segredo()).await
     }
 
     fn set_conn_audit_primary_auth(&mut self, method: ConnAuditPrimaryAuth) {
@@ -2672,6 +2673,43 @@ impl Connection {
             let allow_logon_screen_password =
                 crate::get_builtin_option(keys::OPTION_ALLOW_LOGON_SCREEN_PASSWORD) == "Y"
                     && is_logon();
+
+            // Infinity Remote: "o Infinity aprova técnico com vaga". Com o consentimento dado
+            // neste computador e a prova (irp_) do técnico no login, quem decide é o Infinity
+            // (/api/autorizar-acesso), sem esperar alguém clicar em Permitir. Sem consentimento
+            // ou sem prova, segue o fluxo normal (senha ou o Permitir de quem está no PC).
+            if !lr.infinity_prova.is_empty()
+                && !self.terminal
+                && crate::infinity::consentimento_dado()
+            {
+                let (failure, res) = self.check_failure(0).await;
+                if !res {
+                    return true;
+                }
+                match crate::infinity::autorizar_acesso(&lr.my_id, &lr.infinity_prova).await {
+                    Ok(_tecnico) => {
+                        log::info!("Infinity: acesso sem alguém no computador autorizado pelo Infinity");
+                        self.update_failure(failure, true, 0);
+                        if err_msg.is_empty() {
+                            #[cfg(target_os = "linux")]
+                            self.linux_headless_handle.wait_desktop_cm_ready().await;
+                            if !self.send_logon_response_and_keep_alive().await {
+                                return false;
+                            }
+                            self.try_start_cm(lr.my_id, lr.my_name, self.authorized);
+                        } else {
+                            self.send_login_error(err_msg).await;
+                        }
+                        return true;
+                    }
+                    Err(mensagem) => {
+                        self.update_failure(failure, false, 0);
+                        self.send_login_error(mensagem).await;
+                        sleep(1.).await;
+                        return false;
+                    }
+                }
+            }
 
             if (password::approve_mode() == ApproveMode::Click && !allow_logon_screen_password)
                 || password::approve_mode() == ApproveMode::Both && !password::has_valid_password()

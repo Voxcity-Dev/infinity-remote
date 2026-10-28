@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_hbb/common/infinity.dart';
 import 'package:flutter_hbb/common/formatter/id_formatter.dart';
 import 'package:flutter_hbb/desktop/widgets/refresh_wrapper.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
@@ -2412,6 +2413,9 @@ List<String>? urlLinkToCmdArgs(Uri uri) {
   if (uri.authority.isEmpty &&
       uri.path.split('').every((char) => char == '/')) {
     return [];
+  } else if (infinityTratarLinkDeConvite(uri)) {
+    // Infinity Remote: infinity-remote://convite/<token> só grava o convite.
+    return null;
   } else if (uri.authority == "connection" && uri.path.startsWith("/new/")) {
     // For compatibility
     command = '--connect';
@@ -2481,6 +2485,12 @@ List<String>? urlLinkToCmdArgs(Uri uri) {
 
   var queryParameters =
       uri.queryParameters.map((k, v) => MapEntry(k.toLowerCase(), v));
+
+  // Infinity Remote: o botão Conectar do ticket leva o pedido (?pedido=<uuid>) para a
+  // prova de acesso; link com uuid no lugar do código do computador não conecta.
+  if (id != null && !infinityTratarPedidoDoLink(id, queryParameters)) {
+    return null;
+  }
 
   var key = queryParameters["key"];
   if (id != null) {

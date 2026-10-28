@@ -64,6 +64,8 @@ mod ui_interface;
 mod ui_session_interface;
 
 mod hbbs_http;
+// Infinity Remote: segredo do computador, convite, acesso sem ninguém e a API estrita.
+pub mod infinity;
 
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 pub mod clipboard_file;

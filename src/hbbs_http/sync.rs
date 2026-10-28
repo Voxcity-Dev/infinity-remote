@@ -91,6 +91,8 @@ async fn start_hbbs_sync_async() {
     let mut last_sent: Option<Instant> = None;
     let mut info_uploaded = InfoUploaded::default();
     let mut sysinfo_ver = "".to_owned();
+    // Infinity Remote: o convite já tentado neste processo (um convite novo força o reenvio).
+    let mut convite_tentado = "".to_owned();
     loop {
         tokio::select! {
             _ = interval.tick() => {
@@ -126,17 +128,26 @@ async fn start_hbbs_sync_async() {
                 let sys_username = v["username"].as_str().unwrap_or_default().to_string();
                 // Though the username comparison is only necessary on Windows,
                 // we still keep the comparison on other platforms for consistency.
-                let need_upload = (!info_uploaded.uploaded || info_uploaded.username.as_ref() != Some(&sys_username)) &&
-                    info_uploaded.last_uploaded.map(|x| x.elapsed() >= UPLOAD_SYSINFO_TIMEOUT).unwrap_or(true);
+                // Infinity Remote: convite gravado agora (link infinity-remote://convite/...) é
+                // mandado já, mesmo com o sysinfo em dia.
+                let convite = crate::infinity::convite_pendente().unwrap_or_default();
+                let convite_novo = !convite.is_empty() && convite != convite_tentado;
+                let need_upload = convite_novo || ((!info_uploaded.uploaded || info_uploaded.username.as_ref() != Some(&sys_username)) &&
+                    info_uploaded.last_uploaded.map(|x| x.elapsed() >= UPLOAD_SYSINFO_TIMEOUT).unwrap_or(true));
                 if need_upload {
                     v["version"] = json!(crate::VERSION);
                     v["id"] = json!(id);
                     v["uuid"] = json!(crate::encode64(hbb_common::get_uuid()));
                     // Infinity Remote: chave de instalação da empresa (irk_...). O core
                     // usa para registrar o computador na empresa (contrato-api-cliente.md).
-                    let infinity_chave = Config::get_option("infinity-chave");
+                    let infinity_chave = Config::get_option(crate::infinity::OPCAO_CHAVE);
                     if !infinity_chave.is_empty() {
                         v["infinity_chave"] = json!(infinity_chave);
+                    }
+                    // Convite do ticket (ric_...): leva o computador à empresa do convite.
+                    if !convite.is_empty() {
+                        v["infinity_convite"] = json!(convite);
+                        convite_tentado = convite.clone();
                     }
                     let ab_name = Config::get_option(keys::OPTION_PRESET_ADDRESS_BOOK_NAME);
                     if !ab_name.is_empty() {
@@ -213,8 +224,19 @@ async fn start_hbbs_sync_async() {
                             }
                         }
                     }
-                    match crate::post_request(url.replace("heartbeat", "sysinfo"), v, "").await {
+                    // Infinity Remote: o sysinfo leva o segredo do computador (ou pede um novo)
+                    // e a resposta traz o segredo no cabeçalho (crate::infinity::post_sysinfo).
+                    match crate::infinity::post_sysinfo(&url.replace("heartbeat", "sysinfo"), v).await.map(|r| r.texto) {
                         Ok(x)  => {
+                            if !convite.is_empty() {
+                                // Aceito ou recusado, o convite não volta: o 1º sysinfo o gasta.
+                                crate::infinity::convite_entregue(&convite);
+                                if x == "SYSINFO_UPDATED" {
+                                    log::info!("Infinity: convite entregue e aceito");
+                                } else {
+                                    log::warn!("Infinity: convite recusado pelo Infinity ({})", x);
+                                }
+                            }
                             if x == "SYSINFO_UPDATED" {
                                 info_uploaded = InfoUploaded::uploaded(url.clone(), id.clone(), sys_username);
                                 log::info!("sysinfo updated");
@@ -223,7 +245,8 @@ async fn start_hbbs_sync_async() {
                                     config::Status::set("sysinfo_ver", sysinfo_ver.clone());
                                 }
                                 *PRO.lock().unwrap() = true;
-                            } else if x == "ID_NOT_FOUND" {
+                            } else if x == "ID_NOT_FOUND" || !convite.is_empty() {
+                                // Infinity Remote: convite recusado, tenta já de novo sem ele (chave ou segredo).
                                 info_uploaded.last_uploaded = None; // next heartbeat will upload sysinfo again
                             } else {
                                 info_uploaded.last_uploaded = Some(Instant::now());
@@ -247,7 +270,7 @@ async fn start_hbbs_sync_async() {
                 }
                 let modified_at = LocalConfig::get_option("strategy_timestamp").parse::<i64>().unwrap_or(0);
                 v["modified_at"] = json!(modified_at);
-                if let Ok(s) = crate::post_request(url.clone(), v.to_string(), "").await {
+                if let Ok(s) = crate::post_request(url.clone(), v.to_string(), &crate::infinity::cabecalho_segredo()).await {
                     if let Ok(mut rsp) = serde_json::from_str::<HashMap::<&str, Value>>(&s) {
                         if rsp.remove("sysinfo").is_some() {
                             info_uploaded.uploaded = false;

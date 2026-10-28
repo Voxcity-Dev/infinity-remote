@@ -279,6 +279,24 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("wayland-soft-keyboard-input-label", "Soft keyboard input"),
         ("wayland-keyboard-input-reset-choice-tip", "Reset keyboard input choice"),
         ("remember-wayland-keyboard-choice-tip", "Don't ask again for this remote computer"),
-        ("conn-e2ee-unavailable-tip", "Could not verify end-to-end encryption.\nThe remote device may still be setting up. Try again later.\nIf this keeps happening, the server may be untrusted.\nContinue anyway?")
+        ("conn-e2ee-unavailable-tip", "Could not verify end-to-end encryption.\nThe remote device may still be setting up. Try again later.\nIf this keeps happening, the server may be untrusted.\nContinue anyway?"),
+        // Infinity Remote (#34135, Remote no ticket)
+        ("infinity-sem-ninguem-titulo", "Access with no one at the computer"),
+        ("infinity-sem-ninguem-permitir", "Allow {empresa} technicians to access this computer when no one is here"),
+        ("infinity-sem-ninguem-permitir-generico", "Allow the technicians of the company that supports you to access this computer when no one is here"),
+        ("infinity-sem-ninguem-explicacao", "Infinity only lets in active technicians with a seat, from the same company as this computer. Every access is logged, and you can turn this off anytime in Settings › Security."),
+        ("infinity-sem-ninguem-dica", "When off, the technician needs the password or someone here to click Accept."),
+        ("infinity-permitir", "Allow"),
+        ("infinity-agora-nao", "Not now"),
+        ("infinity-convite-recebido", "Invitation received. This computer will show up in the support chat in a moment."),
+        ("infinity-convite-invalido", "This invitation link is not valid."),
+        ("infinity-link-sem-computador", "This link has no computer code. In the ticket, use \"Access by code\"."),
+        ("infinity-o-que-foi-feito", "What was done?"),
+        ("infinity-o-que-foi-feito-dica", "Optional. It goes to the support summary in Infinity."),
+        ("infinity-o-que-foi-feito-exemplo", "E.g.: reinstalled the printer driver and printed a test page."),
+        ("infinity-enviar-e-encerrar", "Send and close"),
+        ("infinity-encerrar-sem-anotar", "Close without a note"),
+        ("infinity-o-que-foi-feito-enviado", "Added to the support summary."),
+        ("infinity-falha-envio", "Couldn't send it now. Try again or close without a note."),
     ].iter().cloned().collect();
 }
