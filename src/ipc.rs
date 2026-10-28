@@ -916,12 +916,15 @@ async fn handle(data: Data, stream: &mut Connection) {
                 let v = Config::get_options();
                 allow_err!(stream.send(&Data::Options(Some(v))).await);
             }
-            Some(value) => {
+            Some(mut value) => {
                 let _chk = CheckIfRestart::new();
                 let _nat = CheckTestNatType::new();
                 if let Some(v) = value.get("privacy-mode-impl-key") {
                     crate::privacy_mode::switch(v);
                 }
+                // Infinity Remote: a interface manda o mapa inteiro (ui_interface::set_option),
+                // às vezes atrasado; o segredo, que só o serviço escreve, não volta atrás.
+                crate::infinity::preservar_opcoes_do_servico(&mut value);
                 Config::set_options(value);
                 allow_err!(stream.send(&Data::Options(None)).await);
             }

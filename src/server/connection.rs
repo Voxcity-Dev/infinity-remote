@@ -1535,7 +1535,8 @@ impl Connection {
 
     #[inline]
     async fn post_audit_async(url: String, v: Value) -> ResultType<String> {
-        crate::post_request(url, v.to_string(), "").await
+        // Infinity Remote: a auditoria leva o segredo do computador (x-infinity-segredo).
+        crate::post_request(url, v.to_string(), &crate::infinity::cabecalho_segredo()).await
     }
 
     fn set_conn_audit_primary_auth(&mut self, method: ConnAuditPrimaryAuth) {

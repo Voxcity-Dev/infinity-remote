@@ -134,7 +134,7 @@ async fn start_hbbs_sync_async() {
                     v["uuid"] = json!(crate::encode64(hbb_common::get_uuid()));
                     // Infinity Remote: chave de instalação da empresa (irk_...). O core
                     // usa para registrar o computador na empresa (contrato-api-cliente.md).
-                    let infinity_chave = Config::get_option("infinity-chave");
+                    let infinity_chave = Config::get_option(crate::infinity::OPCAO_CHAVE);
                     if !infinity_chave.is_empty() {
                         v["infinity_chave"] = json!(infinity_chave);
                     }
@@ -213,7 +213,9 @@ async fn start_hbbs_sync_async() {
                             }
                         }
                     }
-                    match crate::post_request(url.replace("heartbeat", "sysinfo"), v, "").await {
+                    // Infinity Remote: o sysinfo leva o segredo do computador (ou pede um novo)
+                    // e a resposta traz o segredo no cabeçalho (crate::infinity::post_sysinfo).
+                    match crate::infinity::post_sysinfo(&url.replace("heartbeat", "sysinfo"), v).await.map(|r| r.texto) {
                         Ok(x)  => {
                             if x == "SYSINFO_UPDATED" {
                                 info_uploaded = InfoUploaded::uploaded(url.clone(), id.clone(), sys_username);
@@ -247,7 +249,7 @@ async fn start_hbbs_sync_async() {
                 }
                 let modified_at = LocalConfig::get_option("strategy_timestamp").parse::<i64>().unwrap_or(0);
                 v["modified_at"] = json!(modified_at);
-                if let Ok(s) = crate::post_request(url.clone(), v.to_string(), "").await {
+                if let Ok(s) = crate::post_request(url.clone(), v.to_string(), &crate::infinity::cabecalho_segredo()).await {
                     if let Ok(mut rsp) = serde_json::from_str::<HashMap::<&str, Value>>(&s) {
                         if rsp.remove("sysinfo").is_some() {
                             info_uploaded.uploaded = false;
