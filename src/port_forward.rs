@@ -134,7 +134,7 @@ async fn connect_and_login(
     let mut buffer = Vec::new();
     let mut received = false;
 
-    let _keep_it = hc_connection(feedback, rendezvous_server, token).await;
+    let _keep_it = hc_connection(feedback, rendezvous_server, "").await; // Infinity Remote: token do Infinity não vai ao rendezvous
 
     loop {
         tokio::select! {

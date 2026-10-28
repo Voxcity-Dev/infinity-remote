@@ -234,7 +234,7 @@ impl<T: InvokeUiSession> Remote<T> {
                     crate::rustdesk_interval(time::interval(Duration::new(1, 0)));
                 let mut fps_instant = Instant::now();
 
-                let _keep_it = client::hc_connection(feedback, rendezvous_server, token).await;
+                let _keep_it = client::hc_connection(feedback, rendezvous_server, "").await; // Infinity Remote: token do Infinity não vai ao rendezvous
                 let mut last_recv_time = Instant::now();
 
                 loop {
