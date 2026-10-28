@@ -207,6 +207,13 @@ impl Client {
         (i32, String),
     )> {
         debug_assert!(peer == interface.get_id());
+        // Infinity Remote: o access_token do técnico é da API do Infinity (irm_...), não do
+        // servidor de rendezvous. Com token, o upstream faz secure_tcp com o hbbs e manda o
+        // token no PunchHoleRequest/RequestRelay (recurso do hbbs Pro); o hbbs OSS não
+        // responde ao handshake e todo técnico logado ficava sem conectar ("Failed to secure
+        // tcp: deadline has elapsed"). O token também não deve sair para o rendezvous.
+        let _ = token;
+        let token = "";
         interface.update_direct(None);
         interface.update_received(false);
         match Self::_start(peer, key, token, conn_type, interface.clone()).await {
