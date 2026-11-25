@@ -50,6 +50,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   var watchIsInputMonitoring = false;
   var watchIsCanRecordAudio = false;
   Timer? _updateTimer;
+  // Infinity Remote: o "Ligado a <empresa>" mostrado agora (vazio = fora de empresa).
+  String _infinityLigadoA = '';
   bool isCardClosed = false;
 
   final RxBool _editHover = false.obs;
@@ -96,6 +98,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       if (!isOutgoingOnly) buildPasswordBoard(context),
       // Infinity Remote: pede a chave da empresa enquanto o computador não está numa.
       if (!isOutgoingOnly) infinityAvisoDaChave(context, () => setState(() {})),
+      // Infinity Remote: a empresa a que o computador está ligado, sempre à vista.
+      if (!isOutgoingOnly) infinityLigadoA(context),
       FutureBuilder<Widget>(
         future: Future.value(
             Obx(() => buildHelpCards(stateGlobal.updateUrl.value))),
@@ -705,6 +709,13 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       // Infinity Remote: o consentimento "acesso sem alguém aqui", uma vez, quando o
       // computador entra numa empresa.
       infinityTalvezPerguntarConsentimento();
+      // "Ligado a <empresa>": redesenha quando o computador entra, sai ou o nome muda.
+      final ligadoA =
+          infinityComputadorNaEmpresa() ? infinityEmpresa() : '';
+      if (ligadoA != _infinityLigadoA) {
+        _infinityLigadoA = ligadoA;
+        setState(() {});
+      }
       final error = await bind.mainGetError();
       if (systemError != error) {
         systemError = error;
