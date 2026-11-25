@@ -1618,9 +1618,7 @@ Future<bool> desktopTryShowTabAuditDialogCloseCancelled(
         tabController.state.value.tabs.firstWhere((tab) => tab.key == id).page;
     final ffi = (page as dynamic).ffi;
     final res = await showConnEndAuditDialogCloseCanceled(ffi: ffi);
-    if (res) return res;
-    // Infinity Remote: "O que foi feito?" para o resumo do atendimento no ticket.
-    return await infinityPerguntarOQueFoiFeito(ffi, id);
+    return res;
   } catch (e) {
     debugPrint('Failed to show audit dialog: $e');
     return false;
@@ -1636,6 +1634,12 @@ Future<bool> showConnEndAuditDialogCloseCanceled(
       ffi: ffi, type: type, title: title, text: text);
   if (res == true) {
     return true;
+  }
+  // Infinity Remote: "O que foi feito?" para o resumo do atendimento no ticket, quando o
+  // técnico fecha (pela aba, pelo X da barra ou pelo diálogo de fechar). Aqui passam todos
+  // esses caminhos; a queda vinda do outro lado (type != null) não pergunta.
+  if (type == null) {
+    return await infinityPerguntarOQueFoiFeito(ffi, ffi.id);
   }
   return false;
 }

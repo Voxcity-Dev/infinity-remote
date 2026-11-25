@@ -362,6 +362,11 @@ impl<T: InvokeUiSession> Remote<T> {
         // (a thread espera os gravadores fecharem o arquivo).
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         if let Some(pasta) = self.handler.lc.write().unwrap().infinity_gravacao.take() {
+            // A thread de vídeo pode seguir viva depois da conexão (a sessão da interface ainda
+            // existe): fecha a gravação agora, senão o arquivo fica aberto e nada sobe.
+            for (_, v) in self.video_threads.iter_mut() {
+                v.video_sender.send(MediaData::RecordScreen(false)).ok();
+            }
             crate::infinity::enviar_gravacao_ao_fim(self.handler.get_id(), pasta);
         }
         self.handle_disconnected(round);
