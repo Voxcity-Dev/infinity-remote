@@ -360,8 +360,12 @@ impl<T: InvokeUiSession> Remote<T> {
         }
         // Infinity Remote (#34141): a gravação da empresa sobe ao Infinity ao fim da conexão
         // (a thread espera os gravadores fecharem o arquivo).
+        // A pasta sai numa instrução própria: num `if let` a trava de escrita do `lc` ficaria
+        // presa no bloco inteiro e o `get_id()` (leitura do mesmo `lc`) travaria esta thread.
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        if let Some(pasta) = self.handler.lc.write().unwrap().infinity_gravacao.take() {
+        let pasta_da_gravacao = self.handler.lc.write().unwrap().infinity_gravacao.take();
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        if let Some(pasta) = pasta_da_gravacao {
             // A thread de vídeo pode seguir viva depois da conexão (a sessão da interface ainda
             // existe): fecha a gravação agora, senão o arquivo fica aberto e nada sobe.
             for (_, v) in self.video_threads.iter_mut() {

@@ -980,6 +980,7 @@ mod gravacao {
             );
         }
         let (arquivo, tamanho) = prontos[0].clone();
+        log::info!("Infinity: gravação da conexão pronta ({} bytes); enviando", tamanho);
 
         let token = token_do_tecnico().ok_or_else(|| anyhow!("técnico sem login no Infinity"))?;
         let base = api_base();
