@@ -235,7 +235,7 @@ async fn start_hbbs_sync_async() {
                     }
                     // Infinity Remote: o sysinfo leva o segredo do computador (ou pede um novo)
                     // e a resposta traz o segredo no cabeçalho (crate::infinity::post_sysinfo).
-                    match crate::infinity::post_sysinfo(&url.replace("heartbeat", "sysinfo"), v).await.map(|r| r.texto) {
+                    match crate::infinity::post_sysinfo(&url.replace("heartbeat", "sysinfo"), v, !convite.is_empty()).await.map(|r| r.texto) {
                         Ok(x)  => {
                             if !convite.is_empty() {
                                 // Aceito ou recusado, o convite não volta: o 1º sysinfo o gasta.

@@ -297,6 +297,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         // Infinity Remote (#34135, Remote no ticket)
         ("infinity-sem-ninguem-titulo", "Access with no one at the computer"),
         ("infinity-sem-ninguem-permitir", "Allow {empresa} technicians to access this computer with no one in front of it?"),
+        ("infinity-sem-ninguem-opcao", "{empresa} technicians can access this computer with no one in front of it"),
         ("infinity-sem-ninguem-sem-nome", "Access with no one here stays off until Infinity sends the name of the company this computer is linked to."),
         ("infinity-ligado-a", "Linked to {empresa}"),
         ("infinity-sessao-sem-ninguem", "Access with no one at the computer · {empresa} technician"),

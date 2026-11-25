@@ -483,7 +483,15 @@ pub struct RespostaSysinfo {
 
 /// POST /api/sysinfo com o segredo (ou o pedido de um novo). Guarda o segredo que vier no
 /// cabeçalho da resposta, só se ainda não havia um.
-pub async fn post_sysinfo(url: &str, corpo: String) -> ResultType<RespostaSysinfo> {
+///
+/// `com_convite`: o corpo levou um convite. Aceito, o computador pode ter mudado de empresa:
+/// sem o nome novo no cabeçalho, o nome e o consentimento de antes saem (o "sim" dado a uma
+/// empresa não fica valendo para a do convite).
+pub async fn post_sysinfo(
+    url: &str,
+    corpo: String,
+    com_convite: bool,
+) -> ResultType<RespostaSysinfo> {
     let tinha = segredo();
     let valor = tinha
         .clone()
@@ -507,23 +515,43 @@ pub async fn post_sysinfo(url: &str, corpo: String) -> ResultType<RespostaSysinf
             }
         }
     }
-    if let Some(e) = r.cabecalho(CABECALHO_EMPRESA) {
-        let nome = nome_de_empresa(e);
-        if !nome.is_empty() && Config::get_option(OPCAO_EMPRESA) != nome {
+    let nome = r.cabecalho(CABECALHO_EMPRESA).map(nome_de_empresa).unwrap_or_default();
+    let texto = r.corpo.trim().to_owned();
+    if !nome.is_empty() {
+        if Config::get_option(OPCAO_EMPRESA) != nome {
             Config::set_option(OPCAO_EMPRESA.to_owned(), nome);
         }
+    } else if com_convite && texto == "SYSINFO_UPDATED" {
+        esquecer_empresa();
+        log::warn!("Infinity: convite aceito sem o nome da empresa; acesso sem ninguém desligado");
     }
-    Ok(RespostaSysinfo {
-        texto: r.corpo.trim().to_owned(),
-    })
+    Ok(RespostaSysinfo { texto })
 }
+/// O nome e o consentimento da empresa de antes saem (o consentimento volta a ser perguntado
+/// quando o nome chegar).
+fn esquecer_empresa() {
+    for k in [OPCAO_EMPRESA, OPCAO_SEM_NINGUEM, OPCAO_SEM_NINGUEM_EMPRESA] {
+        if !Config::get_option(k).is_empty() {
+            Config::set_option(k.to_owned(), "".to_owned());
+        }
+    }
+}
+
+/// Caracteres invisíveis que mudam a direção ou escondem texto (U+202E e companhia): na
+/// pergunta do consentimento, disfarçariam um nome como outro.
+fn invisivel(c: char) -> bool {
+    matches!(c,
+        '\u{00AD}' | '\u{061C}' | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
+        | '\u{2060}'..='\u{2069}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}')
+}
+
 /// O nome da empresa vem codificado em URL (cabeçalho HTTP é ASCII). Texto hostil: sem
-/// controle, até 80 caracteres.
+/// controle nem invisíveis, até 80 caracteres.
 fn nome_de_empresa(cru: &str) -> String {
     let decodificado = percent_decode(cru.trim());
     decodificado
         .chars()
-        .filter(|c| !c.is_control())
+        .filter(|c| !c.is_control() && !invisivel(*c))
         .take(80)
         .collect::<String>()
         .trim()
@@ -1240,6 +1268,8 @@ mod test {
     fn nome_da_empresa_decodificado_e_limpo() {
         assert_eq!(nome_de_empresa("Acme%20Ltda"), "Acme Ltda");
         assert_eq!(nome_de_empresa("Jo%C3%A3o%0A%0Dx"), "Joãox");
+        // U+202E (inverte a direção) e U+200B (espaço de largura zero) saem.
+        assert_eq!(nome_de_empresa("Acme%E2%80%AE%E2%80%8BLtda"), "AcmeLtda");
         assert_eq!(nome_de_empresa("%"), "%");
         assert_eq!(nome_de_empresa("a%2"), "a%2");
         assert_eq!(nome_de_empresa("%aé"), "%aé");

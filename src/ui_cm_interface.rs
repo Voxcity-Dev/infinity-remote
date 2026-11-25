@@ -146,7 +146,6 @@ pub struct Client {
     pub privacy_mode: bool,
     pub from_switch: bool,
     /// Infinity Remote: empresa do técnico no acesso sem ninguém; vazio nos outros.
-    #[serde(default)]
     pub infinity_empresa: String,
     pub in_voice_call: bool,
     pub incoming_voice_call: bool,

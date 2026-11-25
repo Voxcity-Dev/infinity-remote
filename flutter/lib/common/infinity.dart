@@ -121,31 +121,36 @@ bool infinityConsentimentoDado() =>
     _respostaDaEmpresaDeHoje();
 
 /// Grava a resposta junto com o nome que estava na tela. Sem nome, não grava "sim".
+/// A resposta vai ANTES do nome: entre as duas gravações (ou se a segunda se perder), o
+/// que fica é a resposta nova com o nome antigo, que não vale para a empresa de hoje. Na
+/// ordem inversa, o "sim" antigo ficaria valendo para o nome novo.
 Future<void> infinityGravarConsentimento(bool permitido) async {
   final empresa = infinityEmpresa();
   if (permitido && empresa.isEmpty) return;
-  await bind.mainSetOption(key: kInfinityOpcaoSemNinguemEmpresa, value: empresa);
   await bind.mainSetOption(
       key: kInfinityOpcaoSemNinguem, value: permitido ? 'Y' : 'N');
+  await bind.mainSetOption(key: kInfinityOpcaoSemNinguemEmpresa, value: empresa);
 }
 
 /// Dá para oferecer o consentimento: o computador está numa empresa e o nome dela chegou.
 bool infinityConsentimentoDisponivel() =>
     infinityComputadorNaEmpresa() && infinityEmpresa().isNotEmpty;
 
-/// "Permitir que os técnicos de <empresa> acessem este computador sem ninguém na frente?"
-/// Sem o nome, o texto diz que a opção espera o nome da empresa (e ela fica desligada).
+/// Rótulo da opção em Configurações: "Técnicos de <empresa> acessam este computador sem
+/// ninguém na frente". Sem o nome, diz que a opção espera o nome (e ela fica desligada).
 String infinityTextoDoConsentimento() {
   final empresa = infinityEmpresa();
   if (empresa.isEmpty) {
     return translate('infinity-sem-ninguem-sem-nome');
   }
-  return translate('infinity-sem-ninguem-permitir')
+  return translate('infinity-sem-ninguem-opcao')
       .replaceAll('{empresa}', empresa);
 }
 
 bool _consentimentoPerguntado = false;
 bool _consentimentoAberto = false;
+// O nome da empresa na última vez que o relógio olhou: mudou, a pergunta pode voltar.
+String _empresaVista = '';
 const _kTagConsentimento = 'infinity-consentimento';
 
 /// Chamado pelo relógio da janela principal: quando o computador entra numa empresa e o
@@ -162,6 +167,11 @@ void infinityTalvezPerguntarConsentimento() {
     _consentimentoAberto = false;
     _consentimentoPerguntado = false;
     return;
+  }
+  final empresaAgora = infinityEmpresa();
+  if (empresaAgora != _empresaVista) {
+    _empresaVista = empresaAgora;
+    if (!_consentimentoAberto) _consentimentoPerguntado = false;
   }
   if (_consentimentoPerguntado || temConexao) return;
   if (bind.isOutgoingOnly()) {
