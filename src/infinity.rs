@@ -182,9 +182,46 @@ impl Resposta {
     }
 }
 
+/// Cliente HTTP só para a API do Infinity: sem proxy nenhum (nem o socks da config nem o
+/// HTTP(S)_PROXY do ambiente), sem seguir redirecionamento (o segredo e o token não saltam
+/// de host) e só HTTPS, com o certificado sempre verificado. Falhou montar: erro (nunca cai
+/// num cliente padrão, como o `create_http_client*` do upstream faz).
+macro_rules! cliente_estrito {
+    ($builder:expr, $tls:expr) => {{
+        let b = $builder
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .https_only(true);
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        let b = match $tls {
+            TlsType::NativeTls => b.use_native_tls(),
+            _ => b.use_rustls_tls(),
+        };
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        let b = {
+            let _ = $tls;
+            match hbb_common::verifier::client_config(false) {
+                Ok(c) => b.use_preconfigured_tls(c),
+                Err(_) => bail!("TLS da API do Infinity indisponível"),
+            }
+        };
+        b.build()
+            .map_err(|_| anyhow!("cliente HTTP da API do Infinity não montou"))?
+    }};
+}
+
+fn cliente_estrito_async(tls: TlsType) -> ResultType<reqwest::Client> {
+    Ok(cliente_estrito!(reqwest::Client::builder(), tls))
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn cliente_estrito_bloqueante(tls: TlsType) -> ResultType<reqwest::blocking::Client> {
+    Ok(cliente_estrito!(reqwest::blocking::Client::builder(), tls))
+}
+
 /// Chamada à API do Infinity sem os desvios do upstream: só HTTPS, certificado sempre
-/// verificado (Rustls e, se o handshake falhar, o TLS nativo do sistema, também verificando)
-/// e nunca pelo proxy TCP do servidor de rendezvous.
+/// verificado (Rustls e, se o handshake falhar, o TLS nativo do sistema, também verificando),
+/// sem proxy, sem redirecionamento e nunca pelo proxy TCP do servidor de rendezvous.
 pub async fn requisicao_estrita(
     metodo: &str,
     url: &str,
@@ -197,8 +234,7 @@ pub async fn requisicao_estrita(
     }
     let mut ultimo_erro = None;
     for tls in [TlsType::Rustls, TlsType::NativeTls] {
-        // false = certificado inválido NUNCA é aceito (danger_accept_invalid_cert).
-        let cliente = crate::hbbs_http::create_http_client_async(tls, false);
+        let cliente = cliente_estrito_async(tls)?;
         let mut req = match metodo.to_ascii_lowercase().as_str() {
             "get" => cliente.get(url),
             "post" => cliente.post(url),
@@ -514,15 +550,28 @@ pub fn consentimento_dado() -> bool {
     Config::get_option(OPCAO_SEM_NINGUEM) == "Y"
 }
 
+/// Por que o acesso sem ninguém não abriu. `pelo_infinity`: o Infinity respondeu e recusou
+/// (ou a prova veio fora do formato); falso = não deu para perguntar (rede, sem API).
+pub struct Recusa {
+    pub mensagem: String,
+    pub pelo_infinity: bool,
+}
+
 /// Chegou conexão com prova e o consentimento está dado: o Infinity aprova?
-/// Ok(nome do técnico) ou Err(mensagem para mostrar a quem conecta).
-pub async fn autorizar_acesso(peer_id: &str, prova: &str) -> Result<String, String> {
+/// Ok(nome do técnico) ou Err(a recusa).
+pub async fn autorizar_acesso(peer_id: &str, prova: &str) -> Result<String, Recusa> {
     if !token_valido(prova, PREFIXO_PROVA) {
-        return Err("A prova de acesso do Infinity é inválida.".to_owned());
+        return Err(Recusa {
+            mensagem: "A prova de acesso do Infinity é inválida.".to_owned(),
+            pelo_infinity: true,
+        });
     }
     let base = api_base();
     if base.is_empty() {
-        return Err("Este computador não está ligado ao Infinity.".to_owned());
+        return Err(Recusa {
+            mensagem: "Este computador não está ligado ao Infinity.".to_owned(),
+            pelo_infinity: false,
+        });
     }
     let corpo = json!({
         "id": Config::get_id(),
@@ -546,7 +595,11 @@ pub async fn autorizar_acesso(peer_id: &str, prova: &str) -> Result<String, Stri
     {
         Ok(r) => r,
         Err(_) => {
-            return Err("Não foi possível falar com o Infinity para autorizar o acesso.".to_owned())
+            return Err(Recusa {
+                mensagem: "Não foi possível falar com o Infinity para autorizar o acesso."
+                    .to_owned(),
+                pelo_infinity: false,
+            })
         }
     };
     let v: Value = serde_json::from_str(&r.corpo).unwrap_or(Value::Null);
@@ -571,12 +624,16 @@ pub async fn autorizar_acesso(peer_id: &str, prova: &str) -> Result<String, Stri
         .unwrap_or_else(|| {
             "O Infinity não autorizou o acesso sem alguém no computador.".to_owned()
         });
-    Err(mensagem)
+    // 200 com permitido:false é recusa; outro status (5xx, gateway) é falha de quem responde.
+    Err(Recusa {
+        mensagem,
+        pelo_infinity: r.status == 200,
+    })
 }
 
 // ───────────────────────────── lado do técnico ─────────────────────────────
 
-fn id_do_computador_valido(id: &str) -> bool {
+pub fn id_do_computador_valido(id: &str) -> bool {
     (6..=12).contains(&id.len()) && id.chars().all(|c| c.is_ascii_digit())
 }
 
@@ -730,8 +787,8 @@ mod gravacao {
         nome.rsplit_once('-')?.1.parse().ok()
     }
 
-    /// A sessão do Infinity desta gravação: a mais recente do técnico com este computador,
-    /// iniciada desde (início da gravação − folga). A lista vem de `/api/sessoes/recentes`.
+    /// A sessão do Infinity desta gravação: a do técnico com este computador iniciada mais
+    /// perto do início da gravação (e não antes de início − folga). A lista vem de `/api/sessoes/recentes`.
     pub fn escolher_sessao(lista: &str, rustdesk_id: &str, inicio: i64) -> Option<String> {
         let v: Value = serde_json::from_str(lista).ok()?;
         let mut melhor: Option<(i64, String)> = None;
@@ -752,8 +809,11 @@ mod gravacao {
             if quando < inicio - FOLGA_DO_INICIO_SEG {
                 continue;
             }
-            if melhor.as_ref().map_or(true, |(q, _)| quando > *q) {
-                melhor = Some((quando, id.to_owned()));
+            // A mais próxima do início desta gravação: numa reconexão ou com outra aba ao
+            // mesmo computador, a mais recente seria a de outra conexão.
+            let distancia = (quando - inicio).abs();
+            if melhor.as_ref().map_or(true, |(d, _)| distancia < *d) {
+                melhor = Some((distancia, id.to_owned()));
             }
         }
         melhor.map(|(_, id)| id)
@@ -801,8 +861,7 @@ mod gravacao {
         }
         let mut ultimo_erro = None;
         for tls in [TlsType::Rustls, TlsType::NativeTls] {
-            // false = certificado inválido NUNCA é aceito; o cliente já vem sem proxy.
-            let cliente = crate::hbbs_http::create_http_client(tls, false);
+            let cliente = super::cliente_estrito_bloqueante(tls)?;
             let mut req = match metodo {
                 "get" => cliente.get(url),
                 "post" => cliente.post(url),
@@ -1089,14 +1148,17 @@ mod test {
               {{"id":"11111111-1111-4111-8111-111111111111","rustdesk_id":"900000001","iniciada_em":"{}"}},
               {{"id":"22222222-2222-4222-8222-222222222222","rustdesk_id":"900000001","iniciada_em":"{}"}},
               {{"id":"33333333-3333-4333-8333-333333333333","rustdesk_id":"900000002","iniciada_em":"{}"}},
+              {{"id":"44444444-4444-4444-8444-444444444444","rustdesk_id":"900000001","iniciada_em":"{}"}},
               {{"id":"nao-e-uuid","rustdesk_id":"900000001","iniciada_em":"{}"}}
             ]"#,
             hbb_common::chrono::DateTime::from_timestamp(inicio - 10, 0).unwrap().to_rfc3339(),
             hbb_common::chrono::DateTime::from_timestamp(inicio - 3600, 0).unwrap().to_rfc3339(),
             hbb_common::chrono::DateTime::from_timestamp(inicio + 5, 0).unwrap().to_rfc3339(),
+            hbb_common::chrono::DateTime::from_timestamp(inicio + 300, 0).unwrap().to_rfc3339(),
             hbb_common::chrono::DateTime::from_timestamp(inicio + 9, 0).unwrap().to_rfc3339(),
         );
-        // a de 1 h antes é de outra conexão; a de outro computador e o id inválido não contam
+        // a de 1 h antes e a de 5 min depois (reconexão) são de outras conexões; a de outro
+        // computador e o id inválido não contam
         assert_eq!(
             escolher_sessao(&lista, "900000001", inicio).as_deref(),
             Some("11111111-1111-4111-8111-111111111111")

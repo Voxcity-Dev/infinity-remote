@@ -2678,8 +2678,16 @@ impl Connection {
             // neste computador e a prova (irp_) do técnico no login, quem decide é o Infinity
             // (/api/autorizar-acesso), sem esperar alguém clicar em Permitir. Sem consentimento
             // ou sem prova, segue o fluxo normal (senha ou o Permitir de quem está no PC).
+            // Só controle remoto, câmera e transferência de arquivo: túnel de porta (e RDP) e
+            // terminal sem ninguém no PC ficam de fora (o consentimento não fala deles).
+            let tipo_do_acesso_sem_ninguem = !matches!(
+                lr.union,
+                Some(login_request::Union::PortForward(_))
+                    | Some(login_request::Union::Terminal(_))
+            );
             if !lr.infinity_prova.is_empty()
                 && !self.terminal
+                && tipo_do_acesso_sem_ninguem
                 && crate::infinity::consentimento_dado()
             {
                 let (failure, res) = self.check_failure(0).await;
@@ -2702,14 +2710,17 @@ impl Connection {
                         }
                         return true;
                     }
-                    Err(mensagem) => {
+                    Err(recusa) => {
                         // Recusado ou Infinity fora do ar: a prova não abre a porta, mas também
                         // não a fecha. Segue o fluxo normal (senha ou o Permitir de quem estiver
-                        // no PC); a tentativa conta como falha, como uma senha errada.
-                        self.update_failure(failure, false, 0);
+                        // no PC). Só a recusa do Infinity conta como falha (como senha errada);
+                        // a queda da API não bloqueia quem conecta.
+                        if recusa.pelo_infinity {
+                            self.update_failure(failure, false, 0);
+                        }
                         log::warn!(
                             "Infinity: acesso sem alguém não autorizado; segue o fluxo normal ({})",
-                            mensagem
+                            recusa.mensagem
                         );
                     }
                 }
