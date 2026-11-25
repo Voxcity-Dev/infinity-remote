@@ -1662,16 +1662,27 @@ impl VideoHandler {
     }
 
     /// Start or stop screen record.
-    pub fn record_screen(&mut self, start: bool, id: String, display_idx: usize, camera: bool) {
+    pub fn record_screen(
+        &mut self,
+        start: bool,
+        id: String,
+        display_idx: usize,
+        camera: bool,
+        pasta_infinity: Option<String>,
+    ) {
         self.record = false;
         if start {
+            // Infinity Remote (#34141): gravação da empresa vai à pasta da conexão, em MP4.
+            let infinity = pasta_infinity.is_some();
             self.recorder = Recorder::new(RecorderContext {
                 server: false,
                 id,
-                dir: crate::ui_interface::video_save_directory(false),
+                dir: pasta_infinity
+                    .unwrap_or_else(|| crate::ui_interface::video_save_directory(false)),
                 display_idx,
                 camera,
                 tx: None,
+                infinity,
             })
             .map_or(Default::default(), |r| Arc::new(Mutex::new(Some(r))));
         } else {
@@ -1777,6 +1788,9 @@ pub struct LoginConfigHandler {
     pub record_permission: bool,
     // Infinity Remote: prova de acesso (irp_) para o próximo LoginRequest; uso único.
     infinity_prova: String,
+    // Infinity Remote (#34141): a empresa do técnico grava as sessões; a pasta desta
+    // conexão (a gravação sobe ao Infinity no fim). None = não grava pelo Infinity.
+    pub infinity_gravacao: Option<String>,
 }
 
 impl Deref for LoginConfigHandler {
@@ -2919,8 +2933,9 @@ pub fn start_video_thread<F, T>(
                             let record_state = session.lc.read().unwrap().record_state;
                             let record_permission = session.lc.read().unwrap().record_permission;
                             let id = session.lc.read().unwrap().id.clone();
+                            let pasta = session.lc.read().unwrap().infinity_gravacao.clone();
                             if record_state && record_permission {
-                                handler.record_screen(true, id, display, is_view_camera);
+                                handler.record_screen(true, id, display, is_view_camera, pasta);
                             }
                             video_handler = Some(handler);
                         }
@@ -3000,8 +3015,9 @@ pub fn start_video_thread<F, T>(
                     }
                     MediaData::RecordScreen(start) => {
                         let id = session.lc.read().unwrap().id.clone();
+                        let pasta = session.lc.read().unwrap().infinity_gravacao.clone();
                         if let Some(handler) = video_handler.as_mut() {
-                            handler.record_screen(start, id, display, is_view_camera);
+                            handler.record_screen(start, id, display, is_view_camera, pasta);
                         }
                     }
                     _ => {}
@@ -3606,6 +3622,25 @@ pub async fn handle_hash(
     if !outro_servidor && !is_terminal {
         let prova = crate::infinity::pedir_prova(&peer_id).await.unwrap_or_default();
         lc.write().unwrap().infinity_prova = prova;
+    }
+    // Infinity Remote (#34141): a empresa grava as sessões? Então esta conexão grava desde a
+    // 1ª imagem, numa pasta só dela, e a gravação sobe ao Infinity no fim.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let conn_type = lc.read().unwrap().conn_type;
+        let com_video = conn_type == ConnType::DEFAULT_CONN || conn_type == ConnType::VIEW_CAMERA;
+        let pasta = if !outro_servidor && com_video {
+            match crate::infinity::config_da_gravacao().await {
+                Some(c) if c.gravar => Some(crate::infinity::pasta_da_gravacao(&peer_id)),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if pasta.is_some() {
+            log::info!("Infinity: a empresa grava as sessões; esta conexão será gravada");
+        }
+        lc.write().unwrap().infinity_gravacao = pasta;
     }
 
     send_login(lc.clone(), os_username, os_password, password, peer).await;

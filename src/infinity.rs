@@ -643,6 +643,362 @@ pub async fn pedir_prova(rustdesk_id: &str) -> Option<String> {
     }
 }
 
+// ───────────────────── técnico: gravação da sessão (#34141) ─────────────────────
+//
+// Com a empresa gravando (`GET /api/gravacao/config` → `gravar:true`), o programa do técnico
+// grava a sessão inteira numa pasta só dela (`<vídeos>/Infinity/<id>-<início>`), em MP4
+// (VP9 pelo `scrap::mp4`, H264/H265 pelo ffmpeg). Ao fim da sessão sobe o arquivo em
+// `POST /api/sessoes/:id/gravacao` (multipart, campo `file`) com o token do técnico, pela
+// mesma regra estrita da API (HTTPS, certificado verificado, sem proxy nem rendezvous), e
+// apaga o arquivo local só depois do 2xx. Recusa (4xx) ou falha: o arquivo fica na pasta.
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub use gravacao::*;
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod gravacao {
+    use super::*;
+    use std::io::Read;
+    use std::path::{Path, PathBuf};
+    use std::time::Instant;
+
+    const SUFIXO_PARCIAL: &str = ".parcial.mp4";
+    const ESPERA_FECHAR: Duration = Duration::from_secs(120);
+    const TEMPO_LIMITE_UPLOAD: Duration = Duration::from_secs(60 * 60);
+    /// A sessão do core começa antes da 1ª imagem; folga para o relógio dos dois lados.
+    const FOLGA_DO_INICIO_SEG: i64 = 120;
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct ConfigDaGravacao {
+        pub gravar: bool,
+        pub max_bytes: u64,
+    }
+
+    pub(super) fn token_do_tecnico() -> Option<String> {
+        let t = LocalConfig::get_option("access_token");
+        if t.starts_with(PREFIXO_TOKEN_TECNICO) {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
+    pub fn ler_config_da_gravacao(corpo: &str) -> Option<ConfigDaGravacao> {
+        let v: Value = serde_json::from_str(corpo).ok()?;
+        Some(ConfigDaGravacao {
+            gravar: v["gravar"].as_bool()?,
+            max_bytes: v["max_bytes"].as_u64().unwrap_or(0),
+        })
+    }
+
+    /// Antes de conectar: a empresa do técnico grava as sessões? Sem login no Infinity ou
+    /// API fora do ar: None (não grava pelo Infinity).
+    pub async fn config_da_gravacao() -> Option<ConfigDaGravacao> {
+        let token = token_do_tecnico()?;
+        let base = api_base();
+        if base.is_empty() {
+            return None;
+        }
+        let r = requisicao_estrita(
+            "get",
+            &format!("{}/api/gravacao/config", base),
+            None,
+            &[("Authorization".to_owned(), format!("Bearer {}", token))],
+            TEMPO_LIMITE_PROVA,
+        )
+        .await
+        .ok()?;
+        if r.status != 200 {
+            log::info!("Infinity: sem configuração de gravação (status {})", r.status);
+            return None;
+        }
+        ler_config_da_gravacao(&r.corpo)
+    }
+
+    /// Pasta só desta conexão: `<vídeos>/Infinity/<id do computador>-<início em segundos>`.
+    pub fn pasta_da_gravacao(rustdesk_id: &str) -> String {
+        let inicio = hbb_common::chrono::Utc::now().timestamp();
+        Path::new(&crate::ui_interface::video_save_directory(false))
+            .join("Infinity")
+            .join(format!("{}-{}", rustdesk_id, inicio))
+            .to_string_lossy()
+            .to_string()
+    }
+
+    fn inicio_da_pasta(pasta: &str) -> Option<i64> {
+        let nome = Path::new(pasta).file_name()?.to_str()?;
+        nome.rsplit_once('-')?.1.parse().ok()
+    }
+
+    /// A sessão do Infinity desta gravação: a mais recente do técnico com este computador,
+    /// iniciada desde (início da gravação − folga). A lista vem de `/api/sessoes/recentes`.
+    pub fn escolher_sessao(lista: &str, rustdesk_id: &str, inicio: i64) -> Option<String> {
+        let v: Value = serde_json::from_str(lista).ok()?;
+        let mut melhor: Option<(i64, String)> = None;
+        for s in v.as_array()? {
+            if s["rustdesk_id"].as_str() != Some(rustdesk_id) {
+                continue;
+            }
+            let Some(id) = s["id"].as_str().filter(|x| uuid_valido(x)) else {
+                continue;
+            };
+            let Some(quando) = s["iniciada_em"]
+                .as_str()
+                .and_then(|t| hbb_common::chrono::DateTime::parse_from_rfc3339(t).ok())
+                .map(|t| t.timestamp())
+            else {
+                continue;
+            };
+            if quando < inicio - FOLGA_DO_INICIO_SEG {
+                continue;
+            }
+            if melhor.as_ref().map_or(true, |(q, _)| quando > *q) {
+                melhor = Some((quando, id.to_owned()));
+            }
+        }
+        melhor.map(|(_, id)| id)
+    }
+
+    /// Os pedaços do multipart (campo `file`, MP4) em volta do arquivo.
+    pub fn moldura_multipart(fronteira: &str) -> (String, String) {
+        (
+            format!(
+                "--{}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"gravacao.mp4\"\r\nContent-Type: video/mp4\r\n\r\n",
+                fronteira
+            ),
+            format!("\r\n--{}--\r\n", fronteira),
+        )
+    }
+
+    fn arquivos(pasta: &Path) -> (Vec<(PathBuf, u64)>, usize) {
+        let mut prontos = Vec::new();
+        let mut abertos = 0;
+        if let Ok(rd) = std::fs::read_dir(pasta) {
+            for e in rd.flatten() {
+                let nome = e.file_name().to_string_lossy().to_string();
+                if nome.ends_with(SUFIXO_PARCIAL) {
+                    abertos += 1;
+                } else if nome.ends_with(".mp4") {
+                    let tamanho = e.metadata().map(|m| m.len()).unwrap_or(0);
+                    prontos.push((e.path(), tamanho));
+                }
+            }
+        }
+        (prontos, abertos)
+    }
+
+    /// Chamada estrita bloqueante (o upload vai em fluxo, sem carregar o arquivo na memória).
+    /// `corpo` monta o corpo de novo a cada tentativa de TLS.
+    fn requisicao_estrita_bloqueante(
+        metodo: &str,
+        url: &str,
+        cabecalhos: &[(String, String)],
+        corpo: &dyn Fn() -> ResultType<Option<reqwest::blocking::Body>>,
+        tempo_limite: Duration,
+    ) -> ResultType<Resposta> {
+        if !url.to_ascii_lowercase().starts_with("https://") {
+            bail!("A API do Infinity só é chamada por HTTPS");
+        }
+        let mut ultimo_erro = None;
+        for tls in [TlsType::Rustls, TlsType::NativeTls] {
+            // false = certificado inválido NUNCA é aceito; o cliente já vem sem proxy.
+            let cliente = crate::hbbs_http::create_http_client(tls, false);
+            let mut req = match metodo {
+                "get" => cliente.get(url),
+                "post" => cliente.post(url),
+                _ => bail!("Método HTTP não suportado"),
+            };
+            for (k, v) in cabecalhos {
+                req = req.header(k.as_str(), v.as_str());
+            }
+            if let Some(b) = corpo()? {
+                req = req.body(b);
+            }
+            match req.timeout(tempo_limite).send() {
+                Ok(r) => {
+                    let status = r.status().as_u16();
+                    let corpo = r.text().unwrap_or_default();
+                    return Ok(Resposta {
+                        status,
+                        corpo,
+                        cabecalhos: Vec::new(),
+                    });
+                }
+                Err(e) => {
+                    let conexao = e.is_connect() || e.is_request();
+                    log::warn!(
+                        "API do Infinity: falha com {:?} (timeout={}, conexão={})",
+                        tls,
+                        e.is_timeout(),
+                        conexao
+                    );
+                    ultimo_erro = Some(anyhow!("falha na chamada à API do Infinity"));
+                    if e.is_timeout() || !conexao {
+                        break;
+                    }
+                }
+            }
+        }
+        Err(ultimo_erro.unwrap_or_else(|| anyhow!("falha na chamada à API do Infinity")))
+    }
+
+    fn mensagem_de_erro(corpo: &str) -> String {
+        serde_json::from_str::<Value>(corpo)
+            .ok()
+            .and_then(|v| v["error"].as_str().map(|s| s.to_owned()))
+            .unwrap_or_default()
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(200)
+            .collect()
+    }
+
+    /// Fim da conexão: sobe a gravação desta pasta numa thread própria (a do io_loop acaba).
+    pub fn enviar_gravacao_ao_fim(rustdesk_id: String, pasta: String) {
+        std::thread::spawn(move || {
+            if let Err(e) = enviar_gravacao(&rustdesk_id, &pasta) {
+                log::warn!("Infinity: gravação não enviada: {}", e);
+            }
+        });
+    }
+
+    fn enviar_gravacao(rustdesk_id: &str, pasta: &str) -> ResultType<()> {
+        let dir = Path::new(pasta);
+        // 1. Espera os gravadores fecharem (o `.parcial.mp4` vira `.mp4` no Drop).
+        let t0 = Instant::now();
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+            let (_, abertos) = arquivos(dir);
+            if abertos == 0 || t0.elapsed() > ESPERA_FECHAR {
+                break;
+            }
+        }
+        let (mut prontos, abertos) = arquivos(dir);
+        if prontos.is_empty() {
+            std::fs::remove_dir(dir).ok(); // só se estiver vazia
+            log::info!("Infinity: sessão sem gravação em MP4 para enviar");
+            return Ok(());
+        }
+        // 2. Uma gravação por sessão no core: vai a maior (troca de resolução ou de tela
+        //    abre arquivo novo); as outras ficam na pasta.
+        prontos.sort_by(|a, b| b.1.cmp(&a.1));
+        if prontos.len() > 1 || abertos > 0 {
+            log::warn!(
+                "Infinity: {} arquivo(s) de gravação nesta sessão ({} aberto(s)); sobe o maior, o resto fica na pasta",
+                prontos.len(),
+                abertos
+            );
+        }
+        let (arquivo, tamanho) = prontos[0].clone();
+
+        let token = token_do_tecnico().ok_or_else(|| anyhow!("técnico sem login no Infinity"))?;
+        let base = api_base();
+        if base.is_empty() {
+            bail!("sem API do Infinity");
+        }
+        let autorizacao = ("Authorization".to_owned(), format!("Bearer {}", token));
+        let sem_corpo = || -> ResultType<Option<reqwest::blocking::Body>> { Ok(None) };
+
+        // 3. A empresa ainda grava, e o teto.
+        let r = requisicao_estrita_bloqueante(
+            "get",
+            &format!("{}/api/gravacao/config", base),
+            &[autorizacao.clone()],
+            &sem_corpo,
+            TEMPO_LIMITE,
+        )?;
+        let config = (r.status == 200)
+            .then(|| ler_config_da_gravacao(&r.corpo))
+            .flatten()
+            .ok_or_else(|| anyhow!("configuração de gravação indisponível (status {})", r.status))?;
+        if !config.gravar {
+            bail!("a empresa deixou de gravar; o arquivo fica na pasta");
+        }
+        if config.max_bytes > 0 && tamanho > config.max_bytes {
+            bail!(
+                "gravação de {} bytes acima do teto de {}; o arquivo fica na pasta",
+                tamanho,
+                config.max_bytes
+            );
+        }
+
+        // 4. A sessão do Infinity (a auditoria do computador pode chegar um pouco depois).
+        let inicio = inicio_da_pasta(pasta).unwrap_or(0);
+        let mut sessao = None;
+        for tentativa in 0..4 {
+            if tentativa > 0 {
+                std::thread::sleep(Duration::from_secs(5));
+            }
+            let r = requisicao_estrita_bloqueante(
+                "get",
+                &format!("{}/api/sessoes/recentes", base),
+                &[autorizacao.clone()],
+                &sem_corpo,
+                TEMPO_LIMITE,
+            )?;
+            if r.status == 200 {
+                sessao = escolher_sessao(&r.corpo, rustdesk_id, inicio);
+                if sessao.is_some() {
+                    break;
+                }
+            }
+        }
+        let sessao = sessao.ok_or_else(|| anyhow!("sessão do Infinity não encontrada; o arquivo fica na pasta"))?;
+
+        // 5. Sobe em fluxo; 503 ou rede: tenta de novo (o core pede "tente de novo").
+        let fronteira = format!(
+            "infinity-{}",
+            &sha256_hex(&format!("{}{}{:?}", sessao, tamanho, Instant::now()))[..32]
+        );
+        let (antes, depois) = moldura_multipart(&fronteira);
+        let total = antes.len() as u64 + tamanho + depois.len() as u64;
+        let corpo = || -> ResultType<Option<reqwest::blocking::Body>> {
+            let f = std::fs::File::open(&arquivo)?;
+            let leitor = std::io::Cursor::new(antes.clone().into_bytes())
+                .chain(f.take(tamanho))
+                .chain(std::io::Cursor::new(depois.clone().into_bytes()));
+            Ok(Some(reqwest::blocking::Body::sized(leitor, total)))
+        };
+        let cabecalhos = [
+            autorizacao.clone(),
+            (
+                "Content-Type".to_owned(),
+                format!("multipart/form-data; boundary={}", fronteira),
+            ),
+        ];
+        let url = format!("{}/api/sessoes/{}/gravacao", base, sessao);
+        for (n, espera) in [0u64, 15, 60].iter().enumerate() {
+            if *espera > 0 {
+                std::thread::sleep(Duration::from_secs(*espera));
+            }
+            match requisicao_estrita_bloqueante("post", &url, &cabecalhos, &corpo, TEMPO_LIMITE_UPLOAD) {
+                Ok(r) if (200..300).contains(&r.status) => {
+                    log::info!("Infinity: gravação da sessão enviada ({} bytes)", tamanho);
+                    if let Err(e) = std::fs::remove_file(&arquivo) {
+                        log::warn!("Infinity: gravação enviada, mas não apagada: {:?}", e.kind());
+                    }
+                    std::fs::remove_dir(dir).ok();
+                    return Ok(());
+                }
+                Ok(r) if r.status == 503 => {
+                    log::warn!("Infinity: storage indisponível na tentativa {} da gravação", n + 1);
+                }
+                Ok(r) => {
+                    bail!(
+                        "o Infinity recusou a gravação (status {}: {}); o arquivo fica na pasta",
+                        r.status,
+                        mensagem_de_erro(&r.corpo)
+                    );
+                }
+                Err(_) => {
+                    log::warn!("Infinity: falha de rede na tentativa {} da gravação", n + 1);
+                }
+            }
+        }
+        bail!("gravação não enviada depois de 3 tentativas; o arquivo fica na pasta")
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -715,6 +1071,44 @@ mod test {
             prefixo_de_url("https://A.b/c/").as_deref(),
             Some("https://a.b/c")
         );
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[test]
+    fn gravacao_config_sessao_e_multipart() {
+        assert_eq!(
+            ler_config_da_gravacao(r#"{"gravar":true,"max_bytes":2147483648}"#),
+            Some(ConfigDaGravacao { gravar: true, max_bytes: 2147483648 })
+        );
+        assert_eq!(ler_config_da_gravacao(r#"{"max_bytes":1}"#), None);
+        assert_eq!(ler_config_da_gravacao("<html>"), None);
+
+        let inicio = 1_795_600_000; // 2026-11-25T...Z
+        let lista = format!(
+            r#"[
+              {{"id":"11111111-1111-4111-8111-111111111111","rustdesk_id":"900000001","iniciada_em":"{}"}},
+              {{"id":"22222222-2222-4222-8222-222222222222","rustdesk_id":"900000001","iniciada_em":"{}"}},
+              {{"id":"33333333-3333-4333-8333-333333333333","rustdesk_id":"900000002","iniciada_em":"{}"}},
+              {{"id":"nao-e-uuid","rustdesk_id":"900000001","iniciada_em":"{}"}}
+            ]"#,
+            hbb_common::chrono::DateTime::from_timestamp(inicio - 10, 0).unwrap().to_rfc3339(),
+            hbb_common::chrono::DateTime::from_timestamp(inicio - 3600, 0).unwrap().to_rfc3339(),
+            hbb_common::chrono::DateTime::from_timestamp(inicio + 5, 0).unwrap().to_rfc3339(),
+            hbb_common::chrono::DateTime::from_timestamp(inicio + 9, 0).unwrap().to_rfc3339(),
+        );
+        // a de 1 h antes é de outra conexão; a de outro computador e o id inválido não contam
+        assert_eq!(
+            escolher_sessao(&lista, "900000001", inicio).as_deref(),
+            Some("11111111-1111-4111-8111-111111111111")
+        );
+        assert_eq!(escolher_sessao(&lista, "900000009", inicio), None);
+        assert_eq!(escolher_sessao("{}", "900000001", inicio), None);
+
+        let (a, d) = moldura_multipart("xyz");
+        assert!(a.starts_with("--xyz\r\n"));
+        assert!(a.contains("name=\"file\""));
+        assert!(a.ends_with("Content-Type: video/mp4\r\n\r\n"));
+        assert_eq!(d, "\r\n--xyz--\r\n");
     }
 
     #[test]

@@ -358,6 +358,12 @@ impl<T: InvokeUiSession> Remote<T> {
                 self.handler.on_establish_connection_error(err.to_string());
             }
         }
+        // Infinity Remote (#34141): a gravação da empresa sobe ao Infinity ao fim da conexão
+        // (a thread espera os gravadores fecharem o arquivo).
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        if let Some(pasta) = self.handler.lc.write().unwrap().infinity_gravacao.take() {
+            crate::infinity::enviar_gravacao_ao_fim(self.handler.get_id(), pasta);
+        }
         self.handle_disconnected(round);
     }
 
@@ -951,6 +957,13 @@ impl<T: InvokeUiSession> Remote<T> {
                 }
             }
             Data::RecordScreen(start) => {
+                // Infinity Remote (#34141): com a empresa gravando, o técnico não para a gravação.
+                let pela_empresa = self.handler.lc.read().unwrap().infinity_gravacao.is_some();
+                if !start && pela_empresa {
+                    log::info!("Infinity: a empresa grava as sessões; a gravação continua");
+                    self.handler.update_record_status(self.last_record_state);
+                    return true;
+                }
                 self.handler.lc.write().unwrap().record_state = start;
                 self.update_record_state();
             }
@@ -2460,8 +2473,10 @@ impl<T: InvokeUiSession> Remote<T> {
         );
         self.video_threads.insert(display, video_thread);
         if self.video_threads.len() == 1 {
+            // Infinity Remote (#34141): a empresa grava as sessões = grava desde a 1ª imagem.
             let auto_record =
-                LocalConfig::get_bool_option(config::keys::OPTION_ALLOW_AUTO_RECORD_OUTGOING);
+                LocalConfig::get_bool_option(config::keys::OPTION_ALLOW_AUTO_RECORD_OUTGOING)
+                    || self.handler.lc.read().unwrap().infinity_gravacao.is_some();
             self.handler.lc.write().unwrap().record_state = auto_record;
             self.update_record_state();
         }
@@ -2472,6 +2487,11 @@ impl<T: InvokeUiSession> Remote<T> {
         let permission = self.handler.lc.read().unwrap().record_permission;
         if !permission {
             self.handler.lc.write().unwrap().record_state = false;
+        } else if self.handler.lc.read().unwrap().infinity_gravacao.is_some()
+            && !self.video_threads.is_empty()
+        {
+            // Infinity Remote: o computador voltou a permitir a gravação: a da empresa volta.
+            self.handler.lc.write().unwrap().record_state = true;
         }
         let state = self.handler.lc.read().unwrap().record_state;
         let start = state && permission;
