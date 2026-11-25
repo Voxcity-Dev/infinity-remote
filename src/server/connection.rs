@@ -361,6 +361,9 @@ pub struct Connection {
     #[cfg(windows)]
     portable: PortableState,
     from_switch: bool,
+    /// Infinity Remote: nome da empresa cujo técnico entrou sem ninguém no computador (o
+    /// aviso da sessão o mostra); vazio nos outros acessos.
+    infinity_empresa: String,
     voice_call_request_timestamp: Option<NonZeroI64>,
     voice_calling: bool,
     options_in_login: Option<OptionMessage>,
@@ -555,6 +558,7 @@ impl Connection {
             #[cfg(windows)]
             portable: Default::default(),
             from_switch: false,
+            infinity_empresa: String::new(),
             audio_sender: None,
             voice_call_request_timestamp: None,
             voice_calling: false,
@@ -2113,6 +2117,7 @@ impl Connection {
             block_input: self.block_input,
             privacy_mode: self.privacy_mode,
             from_switch: self.from_switch,
+            infinity_empresa: self.infinity_empresa.clone(),
         });
     }
 
@@ -2698,6 +2703,8 @@ impl Connection {
                 match crate::infinity::autorizar_acesso(&lr.my_id, &lr.infinity_prova).await {
                     Ok(_tecnico) => {
                         log::info!("Infinity: acesso sem alguém no computador autorizado pelo Infinity");
+                        // O aviso da sessão diz de qual empresa é o técnico.
+                        self.infinity_empresa = crate::infinity::empresa();
                         self.update_failure(failure, true, 0);
                         if err_msg.is_empty() {
                             #[cfg(target_os = "linux")]

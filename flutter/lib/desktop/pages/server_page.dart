@@ -485,6 +485,18 @@ class _CmHeaderState extends State<_CmHeader>
                     style: TextStyle(color: Colors.white, fontSize: 14),
                   ),
                 ),
+                // Infinity Remote: entrou sem ninguém aqui; de qual empresa é o técnico.
+                if (client.infinityEmpresa.isNotEmpty)
+                  Text(
+                    translate('infinity-sessao-sem-ninguem')
+                        .replaceAll('{empresa}', client.infinityEmpresa),
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ).marginOnly(top: 4),
                 if (client.type_() == ClientType.terminal)
                   FittedBox(
                     child: Text(

@@ -315,6 +315,9 @@ pub enum Data {
         block_input: bool,
         privacy_mode: bool,
         from_switch: bool,
+        /// Infinity Remote: empresa do técnico no acesso sem ninguém; vazio nos outros.
+        #[serde(default)]
+        infinity_empresa: String,
     },
     ChatMessage {
         text: String,

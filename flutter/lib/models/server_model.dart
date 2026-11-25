@@ -830,6 +830,8 @@ class Client {
   bool privacyMode = false;
   bool disconnected = false;
   bool fromSwitch = false;
+  // Infinity Remote: empresa do técnico no acesso sem ninguém; vazio nos outros.
+  String infinityEmpresa = "";
   bool inVoiceCall = false;
   bool incomingVoiceCall = false;
 
@@ -859,6 +861,7 @@ class Client {
     privacyMode = json['privacy_mode'] ?? privacyMode;
     disconnected = json['disconnected'];
     fromSwitch = json['from_switch'];
+    infinityEmpresa = json['infinity_empresa'] ?? '';
     inVoiceCall = json['in_voice_call'];
     incomingVoiceCall = json['incoming_voice_call'];
   }
@@ -884,6 +887,7 @@ class Client {
     data['privacy_mode'] = privacyMode;
     data['disconnected'] = disconnected;
     data['from_switch'] = fromSwitch;
+    data['infinity_empresa'] = infinityEmpresa;
     data['in_voice_call'] = inVoiceCall;
     data['incoming_voice_call'] = incomingVoiceCall;
     return data;
