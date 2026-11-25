@@ -539,8 +539,10 @@ impl<T: InvokeUiSession> Session<T> {
             luid,
             &mark_unsupported,
         );
-        let mut vp8 = decoder.ability_vp8 > 0;
-        let mut av1 = decoder.ability_av1 > 0;
+        // Infinity Remote (#34141): com a empresa gravando, VP8 e AV1 saem do menu.
+        let pela_empresa = self.lc.read().unwrap().infinity_gravacao.is_some();
+        let mut vp8 = decoder.ability_vp8 > 0 && !pela_empresa;
+        let mut av1 = decoder.ability_av1 > 0 && !pela_empresa;
         let mut h264 = decoder.ability_h264 > 0;
         let mut h265 = decoder.ability_h265 > 0;
         let enc = &self.lc.read().unwrap().supported_encoding;

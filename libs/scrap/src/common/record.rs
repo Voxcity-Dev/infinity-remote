@@ -450,6 +450,8 @@ fn fechar_parcial(arquivo: &str) {
 /// Infinity Remote (#34141): VP9 em MP4 (`common::mp4`), só na gravação que sobe ao Infinity.
 struct Mp4Vp9Recorder {
     mp4: Option<Mp4Vp9<io::BufWriter<File>>>,
+    // Erro de escrita: para de escrever, mas o que já entrou é fechado no Drop.
+    falhou: bool,
     ctx: RecorderContext,
     ctx2: RecorderContext2,
     start: Instant,
@@ -465,6 +467,7 @@ impl RecorderApi for Mp4Vp9Recorder {
         )?;
         Ok(Mp4Vp9Recorder {
             mp4: Some(mp4),
+            falhou: false,
             ctx,
             ctx2,
             start: Instant::now(),
@@ -472,12 +475,15 @@ impl RecorderApi for Mp4Vp9Recorder {
     }
 
     fn write_video(&mut self, frame: &EncodedVideoFrame) -> bool {
+        if self.falhou {
+            return false;
+        }
         match self.mp4.as_mut() {
             Some(m) => match m.escrever(&frame.data, frame.key, frame.pts) {
                 Ok(ok) => ok,
                 Err(e) => {
                     log::error!("Infinity: gravação MP4 falhou ao escrever: {:?}", e.kind());
-                    self.mp4 = None;
+                    self.falhou = true;
                     false
                 }
             },

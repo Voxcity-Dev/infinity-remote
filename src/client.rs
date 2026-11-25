@@ -2332,12 +2332,23 @@ impl LoginConfigHandler {
     }
 
     pub fn get_supported_decoding(&self) -> SupportedDecoding {
-        Decoder::supported_decodings(
+        let mut d = Decoder::supported_decodings(
             Some(&self.id),
             use_texture_render(),
             self.adapter_luid,
             &self.mark_unsupported,
-        )
+        );
+        // Infinity Remote (#34141): com a empresa gravando, só codecs que gravam em MP4 (VP9,
+        // H264, H265). VP8 e AV1 sairiam em WebM, que o Infinity não aceita.
+        if self.infinity_gravacao.is_some() {
+            d.ability_vp8 = 0;
+            d.ability_av1 = 0;
+            use supported_decoding::PreferCodec;
+            if d.prefer == PreferCodec::VP8.into() || d.prefer == PreferCodec::AV1.into() {
+                d.prefer = PreferCodec::Auto.into();
+            }
+        }
+        d
     }
 
     /// Parse the image quality option.
@@ -2786,12 +2797,7 @@ impl LoginConfigHandler {
     }
 
     pub fn update_supported_decodings(&self) -> Message {
-        let decoding = scrap::codec::Decoder::supported_decodings(
-            Some(&self.id),
-            use_texture_render(),
-            self.adapter_luid,
-            &self.mark_unsupported,
-        );
+        let decoding = self.get_supported_decoding();
         let mut misc = Misc::new();
         misc.set_option(OptionMessage {
             supported_decoding: hbb_common::protobuf::MessageField::some(decoding),
@@ -3619,28 +3625,39 @@ pub async fn handle_hash(
         let lc = lc.read().unwrap();
         (lc.id.clone(), lc.other_server.is_some())
     };
-    if !outro_servidor && !is_terminal {
-        let prova = crate::infinity::pedir_prova(&peer_id).await.unwrap_or_default();
-        lc.write().unwrap().infinity_prova = prova;
-    }
     // Infinity Remote (#34141): a empresa grava as sessões? Então esta conexão grava desde a
-    // 1ª imagem, numa pasta só dela, e a gravação sobe ao Infinity no fim.
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    {
-        let conn_type = lc.read().unwrap().conn_type;
-        let com_video = conn_type == ConnType::DEFAULT_CONN || conn_type == ConnType::VIEW_CAMERA;
-        let pasta = if !outro_servidor && com_video {
-            match crate::infinity::config_da_gravacao().await {
+    // 1ª imagem, numa pasta só dela, e a gravação sobe ao Infinity no fim. A prova e a config
+    // da gravação vão juntas (a API fora do ar não soma dois tempos-limite).
+    let conn_type = lc.read().unwrap().conn_type;
+    let com_video = conn_type == ConnType::DEFAULT_CONN || conn_type == ConnType::VIEW_CAMERA;
+    if !outro_servidor && !is_terminal {
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        let (prova, gravacao) = {
+            let grava = async {
+                if com_video && crate::infinity::id_do_computador_valido(&peer_id) {
+                    crate::infinity::config_da_gravacao().await
+                } else {
+                    None
+                }
+            };
+            hbb_common::tokio::join!(crate::infinity::pedir_prova(&peer_id), grava)
+        };
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        let (prova, gravacao) = (crate::infinity::pedir_prova(&peer_id).await, None::<()>);
+        lc.write().unwrap().infinity_prova = prova.unwrap_or_default();
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            let pasta = match gravacao {
                 Some(c) if c.gravar => Some(crate::infinity::pasta_da_gravacao(&peer_id)),
                 _ => None,
+            };
+            if pasta.is_some() {
+                log::info!("Infinity: a empresa grava as sessões; esta conexão será gravada");
             }
-        } else {
-            None
-        };
-        if pasta.is_some() {
-            log::info!("Infinity: a empresa grava as sessões; esta conexão será gravada");
+            lc.write().unwrap().infinity_gravacao = pasta;
         }
-        lc.write().unwrap().infinity_gravacao = pasta;
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        let _ = (gravacao, com_video);
     }
 
     send_login(lc.clone(), os_username, os_password, password, peer).await;
