@@ -440,7 +440,7 @@ mod test {
         // co64: o primeiro pedaço começa logo depois do cabeçalho do mdat
         let co64 = achar(b, "co64");
         let p0 = u64::from_be_bytes(b[co64 + 16..co64 + 24].try_into().unwrap()) as usize;
-        assert_eq!(p0, 32 + 16);
+        assert_eq!(p0, 28 + 16); // ftyp de 28 bytes + cabeçalho do mdat de 16
         assert_eq!(&b[p0..p0 + 5], &[0x82, 0x49, 0x83, 0x42, 0x00]);
         // stss: só o 1º é chave
         let stss = achar(b, "stss");
