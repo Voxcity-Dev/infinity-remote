@@ -2703,10 +2703,14 @@ impl Connection {
                         return true;
                     }
                     Err(mensagem) => {
+                        // Recusado ou Infinity fora do ar: a prova não abre a porta, mas também
+                        // não a fecha. Segue o fluxo normal (senha ou o Permitir de quem estiver
+                        // no PC); a tentativa conta como falha, como uma senha errada.
                         self.update_failure(failure, false, 0);
-                        self.send_login_error(mensagem).await;
-                        sleep(1.).await;
-                        return false;
+                        log::warn!(
+                            "Infinity: acesso sem alguém não autorizado; segue o fluxo normal ({})",
+                            mensagem
+                        );
                     }
                 }
             }
