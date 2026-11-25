@@ -1,4 +1,5 @@
 use crate::CodecFormat;
+use crate::common::mp4::{self, Mp4Vp9};
 #[cfg(feature = "hwcodec")]
 use hbb_common::anyhow::anyhow;
 use hbb_common::{
@@ -28,6 +29,9 @@ pub struct RecorderContext {
     pub display_idx: usize,
     pub camera: bool,
     pub tx: Option<Sender<RecordState>>,
+    /// Infinity Remote (#34141): gravação que sobe ao Infinity. VP9 vai em MP4 (o core só
+    /// aceita MP4) e o arquivo se chama `*.parcial.mp4` até fechar; aí vira `*.mp4`.
+    pub infinity: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -53,7 +57,11 @@ impl RecorderContext2 {
                 ctx.display_idx
             )
             + &self.format.to_string().to_lowercase()
-            + if self.format == CodecFormat::VP9
+            + if ctx.infinity && self.format != CodecFormat::VP8 && self.format != CodecFormat::AV1
+            {
+                // VP9 (Mp4Vp9Recorder) e H264/H265 (ffmpeg): MP4, aberto até o fim.
+                mp4::SUFIXO_PARCIAL
+            } else if self.format == CodecFormat::VP9
                 || self.format == CodecFormat::VP8
                 || self.format == CodecFormat::AV1
             {
@@ -152,6 +160,10 @@ impl Recorder {
         };
         if self.inner.is_none() {
             self.inner = match format {
+                CodecFormat::VP9 if self.ctx.infinity => Some(Box::new(Mp4Vp9Recorder::new(
+                    self.ctx.clone(),
+                    (*ctx2).clone(),
+                )?)),
                 CodecFormat::VP8 | CodecFormat::VP9 | CodecFormat::AV1 => Some(Box::new(
                     WebmRecorder::new(self.ctx.clone(), (*ctx2).clone())?,
                 )),
@@ -417,6 +429,79 @@ impl Drop for HwRecorder {
             self.muxer = None;
             std::fs::remove_file(&self.ctx2.filename).ok();
             state = RecordState::RemoveFile;
+        } else if self.ctx.infinity {
+            // Infinity Remote: fechado, o `.parcial.mp4` vira `.mp4` (pronto para subir).
+            self.muxer = None;
+            fechar_parcial(&self.ctx2.filename);
+        }
+        self.ctx.tx.as_ref().map(|tx| tx.send(state));
+    }
+}
+
+/// Infinity Remote: `*.parcial.mp4` fechado vira `*.mp4`.
+fn fechar_parcial(arquivo: &str) {
+    if let Some(final_) = mp4::nome_final(arquivo) {
+        if let Err(e) = std::fs::rename(arquivo, &final_) {
+            log::error!("Infinity: gravação não renomeada ao fechar: {:?}", e.kind());
+        }
+    }
+}
+
+/// Infinity Remote (#34141): VP9 em MP4 (`common::mp4`), só na gravação que sobe ao Infinity.
+struct Mp4Vp9Recorder {
+    mp4: Option<Mp4Vp9<io::BufWriter<File>>>,
+    ctx: RecorderContext,
+    ctx2: RecorderContext2,
+    start: Instant,
+}
+
+impl RecorderApi for Mp4Vp9Recorder {
+    fn new(ctx: RecorderContext, ctx2: RecorderContext2) -> ResultType<Self> {
+        let arquivo = File::create(&ctx2.filename)?;
+        let mp4 = Mp4Vp9::new(
+            io::BufWriter::with_capacity(1 << 20, arquivo),
+            ctx2.width,
+            ctx2.height,
+        )?;
+        Ok(Mp4Vp9Recorder {
+            mp4: Some(mp4),
+            ctx,
+            ctx2,
+            start: Instant::now(),
+        })
+    }
+
+    fn write_video(&mut self, frame: &EncodedVideoFrame) -> bool {
+        match self.mp4.as_mut() {
+            Some(m) => match m.escrever(&frame.data, frame.key, frame.pts) {
+                Ok(ok) => ok,
+                Err(e) => {
+                    log::error!("Infinity: gravação MP4 falhou ao escrever: {:?}", e.kind());
+                    self.mp4 = None;
+                    false
+                }
+            },
+            None => false,
+        }
+    }
+}
+
+impl Drop for Mp4Vp9Recorder {
+    fn drop(&mut self) {
+        let fechou = match self.mp4.take() {
+            Some(mut m) => {
+                let r = m.finalizar();
+                drop(m); // fecha o arquivo antes de renomear ou apagar
+                matches!(r, Ok(true))
+            }
+            None => false,
+        };
+        let mut state = RecordState::WriteTail;
+        if !fechou || self.start.elapsed().as_secs() < MIN_SECS {
+            std::fs::remove_file(&self.ctx2.filename).ok();
+            state = RecordState::RemoveFile;
+        } else {
+            fechar_parcial(&self.ctx2.filename);
         }
         self.ctx.tx.as_ref().map(|tx| tx.send(state));
     }

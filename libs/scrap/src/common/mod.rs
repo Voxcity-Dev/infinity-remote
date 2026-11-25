@@ -52,6 +52,8 @@ pub mod aom;
 #[cfg(not(any(target_os = "ios")))]
 pub mod camera;
 pub mod record;
+// Infinity Remote (#34141): VP9 em MP4 para a gravação que sobe ao Infinity.
+pub mod mp4;
 mod vpx;
 
 #[repr(usize)]

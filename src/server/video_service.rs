@@ -1065,6 +1065,7 @@ fn get_recorder(
             display_idx,
             camera,
             tx,
+            infinity: false,
         })
         .map_or(Default::default(), |r| Arc::new(Mutex::new(Some(r))))
     } else {
