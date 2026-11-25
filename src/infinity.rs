@@ -45,6 +45,10 @@ pub const OPCAO_CONVITE_GASTO: &str = "infinity-convite-gasto";
 pub const OPCAO_EMPRESA: &str = "infinity-empresa";
 /// Consentimento "técnicos da empresa acessam sem alguém aqui": "Y", "N" ou vazio (não perguntado).
 pub const OPCAO_SEM_NINGUEM: &str = "infinity-acesso-sem-ninguem";
+/// O nome da empresa que a pessoa viu ao responder o consentimento. Só vale enquanto for o
+/// nome que o Infinity manda hoje: sem nome, ou com outro nome, a resposta não vale e a
+/// pergunta volta (um convite repassado por outra empresa não leva o "sim" junto).
+pub const OPCAO_SEM_NINGUEM_EMPRESA: &str = "infinity-acesso-sem-ninguem-empresa";
 /// Lado do técnico: pedido do ticket (`<rustdesk_id>:<pedido_uuid>`) vindo do link de conexão.
 pub const OPCAO_LOCAL_PEDIDO: &str = "infinity-pedido";
 
@@ -441,6 +445,7 @@ pub fn preservar_opcoes_do_servico(novas: &mut std::collections::HashMap<String,
             // O nome e o consentimento eram da empresa antiga: na nova, pergunta de novo.
             novas.remove(OPCAO_EMPRESA);
             novas.remove(OPCAO_SEM_NINGUEM);
+            novas.remove(OPCAO_SEM_NINGUEM_EMPRESA);
             log::info!("Infinity: chave da empresa trocada; o segredo será pedido de novo");
         }
         _ => {
@@ -545,9 +550,23 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// O consentimento "técnicos da empresa acessam sem alguém aqui" foi dado.
+/// O nome da empresa que o Infinity mandou (validado no core), ou vazio.
+pub fn empresa() -> String {
+    Config::get_option(OPCAO_EMPRESA).trim().to_owned()
+}
+
+/// O consentimento "técnicos da empresa acessam sem alguém aqui" foi dado, com o nome da
+/// empresa na tela, e para a empresa a que o computador está ligado hoje.
 pub fn consentimento_dado() -> bool {
-    Config::get_option(OPCAO_SEM_NINGUEM) == "Y"
+    consentimento_vale(
+        &Config::get_option(OPCAO_SEM_NINGUEM),
+        &Config::get_option(OPCAO_SEM_NINGUEM_EMPRESA),
+        &empresa(),
+    )
+}
+
+fn consentimento_vale(resposta: &str, empresa_da_resposta: &str, empresa_hoje: &str) -> bool {
+    resposta == "Y" && !empresa_hoje.is_empty() && empresa_da_resposta.trim() == empresa_hoje
 }
 
 /// Por que o acesso sem ninguém não abriu. `pelo_infinity`: o Infinity respondeu e recusou
@@ -1203,6 +1222,18 @@ mod test {
         assert!(a.contains("name=\"file\""));
         assert!(a.ends_with("Content-Type: video/mp4\r\n\r\n"));
         assert_eq!(d, "\r\n--xyz--\r\n");
+    }
+
+    #[test]
+    fn consentimento_so_com_o_nome_da_empresa() {
+        assert!(consentimento_vale("Y", "Acme Ltda", "Acme Ltda"));
+        // Sem nome: o "sim" dado ao texto genérico não abre a porta.
+        assert!(!consentimento_vale("Y", "", ""));
+        assert!(!consentimento_vale("Y", "", "Acme Ltda"));
+        // Outra empresa: o "sim" era para a de antes.
+        assert!(!consentimento_vale("Y", "Acme Ltda", "Outra SA"));
+        assert!(!consentimento_vale("N", "Acme Ltda", "Acme Ltda"));
+        assert!(!consentimento_vale("", "Acme Ltda", "Acme Ltda"));
     }
 
     #[test]

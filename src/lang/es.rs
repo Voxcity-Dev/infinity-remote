@@ -781,8 +781,10 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("infinity-agora-nao", "Ahora no"),
         // Infinity Remote (#34135, Remote no ticket)
         ("infinity-sem-ninguem-titulo", "Acceso sin nadie en el equipo"),
-        ("infinity-sem-ninguem-permitir", "Permitir que los técnicos de {empresa} accedan a este equipo sin nadie presente"),
-        ("infinity-sem-ninguem-permitir-generico", "Permitir que los técnicos de la empresa que le da soporte accedan a este equipo sin nadie presente"),
+        ("infinity-sem-ninguem-permitir", "¿Permitir que los técnicos de {empresa} accedan a este equipo sin nadie delante?"),
+        ("infinity-sem-ninguem-sem-nome", "El acceso sin nadie presente queda desactivado hasta que Infinity informe el nombre de la empresa a la que está vinculado este equipo."),
+        ("infinity-ligado-a", "Vinculado a {empresa}"),
+        ("infinity-sessao-sem-ninguem", "Acceso sin nadie en el equipo · técnico de {empresa}"),
         ("infinity-sem-ninguem-explicacao", "Infinity solo deja entrar a técnicos activos, con plaza y de la misma empresa que este equipo. Cada acceso queda registrado y puede desactivarlo cuando quiera en Configuración › Seguridad."),
         ("infinity-sem-ninguem-dica", "Desactivado, el técnico necesita la contraseña o que alguien aquí haga clic en Aceptar."),
         ("infinity-permitir", "Permitir"),

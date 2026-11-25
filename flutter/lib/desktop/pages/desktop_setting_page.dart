@@ -1077,9 +1077,10 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
   }
 
   // Infinity Remote: o consentimento "técnicos da empresa acessam sem alguém aqui",
-  // dado na pergunta única da janela principal e revogável aqui.
+  // dado na pergunta única da janela principal e revogável aqui. Sem o nome da empresa,
+  // fica desligado e não dá para ligar (Card VoxPlan #34143).
   Widget infinity(context) {
-    bool enabled = !locked;
+    bool enabled = !locked && infinityConsentimentoDisponivel();
     return _Card(title: 'Infinity Remote', children: [
       _OptionCheckBox(context, infinityTextoDoConsentimento(),
           kInfinityOpcaoSemNinguem,

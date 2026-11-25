@@ -4,7 +4,12 @@
 // - link infinity-remote://convite/<token>: grava o convite; o serviço o manda no
 //   próximo sysinfo (src/hbbs_http/sync.rs) e o apaga depois da resposta.
 // - consentimento "técnicos da empresa acessam sem alguém aqui": pergunta única no
-//   computador atendido, revogável em Configurações › Segurança.
+//   computador atendido, revogável em Configurações › Segurança. Só com o nome da
+//   empresa (cabeçalho x-infinity-empresa, validado no core) na pergunta, e a resposta
+//   vale para aquele nome: um convite repassado por outra empresa não aparece como "a
+//   empresa que atende você" (Card VoxPlan #34143, A1).
+// - "Ligado a <empresa>" fixo na janela principal; o aviso de cada sessão sem ninguém
+//   (gerenciador de conexões) também diz a empresa.
 // - "O que foi feito?": ao encerrar a sessão, o técnico pode anotar o que fez; vai
 //   para o resumo do atendimento no ticket.
 // - Chave da empresa (irk_): o admin a copia no assistente "Adicionar computador"
@@ -39,6 +44,8 @@ const kInfinityOpcaoLocalAvisoChave = 'infinity-aviso-chave-dispensado';
 
 const kInfinityOpcaoEmpresa = 'infinity-empresa';
 const kInfinityOpcaoSemNinguem = 'infinity-acesso-sem-ninguem';
+// O nome da empresa que a pessoa viu ao responder (src/infinity.rs, OPCAO_SEM_NINGUEM_EMPRESA).
+const kInfinityOpcaoSemNinguemEmpresa = 'infinity-acesso-sem-ninguem-empresa';
 const kInfinityOpcaoLocalPedido = 'infinity-pedido';
 const kInfinityOQueFoiFeitoMax = 500;
 
@@ -96,17 +103,42 @@ bool infinityTratarPedidoDoLink(String id, Map<String, String> query) {
 bool infinityComputadorNaEmpresa() =>
     bind.mainGetOptionSync(key: kInfinityOpcaoSegredo).isNotEmpty;
 
+/// O nome da empresa que o Infinity mandou (validado no core), ou vazio.
+String infinityEmpresa() =>
+    bind.mainGetOptionSync(key: kInfinityOpcaoEmpresa).trim();
+
+/// A resposta ao consentimento foi dada com o nome da empresa de hoje na tela.
+bool _respostaDaEmpresaDeHoje() {
+  final empresa = infinityEmpresa();
+  return empresa.isNotEmpty &&
+      bind.mainGetOptionSync(key: kInfinityOpcaoSemNinguemEmpresa).trim() ==
+          empresa;
+}
+
+/// Igual ao serviço (src/infinity.rs, consentimento_dado): "sim", com nome, da empresa de hoje.
 bool infinityConsentimentoDado() =>
-    bind.mainGetOptionSync(key: kInfinityOpcaoSemNinguem) == 'Y';
+    bind.mainGetOptionSync(key: kInfinityOpcaoSemNinguem) == 'Y' &&
+    _respostaDaEmpresaDeHoje();
 
-Future<void> infinityGravarConsentimento(bool permitido) => bind.mainSetOption(
-    key: kInfinityOpcaoSemNinguem, value: permitido ? 'Y' : 'N');
+/// Grava a resposta junto com o nome que estava na tela. Sem nome, não grava "sim".
+Future<void> infinityGravarConsentimento(bool permitido) async {
+  final empresa = infinityEmpresa();
+  if (permitido && empresa.isEmpty) return;
+  await bind.mainSetOption(key: kInfinityOpcaoSemNinguemEmpresa, value: empresa);
+  await bind.mainSetOption(
+      key: kInfinityOpcaoSemNinguem, value: permitido ? 'Y' : 'N');
+}
 
-/// "Permitir que os técnicos de <empresa> acessem este computador sem alguém aqui".
+/// Dá para oferecer o consentimento: o computador está numa empresa e o nome dela chegou.
+bool infinityConsentimentoDisponivel() =>
+    infinityComputadorNaEmpresa() && infinityEmpresa().isNotEmpty;
+
+/// "Permitir que os técnicos de <empresa> acessem este computador sem ninguém na frente?"
+/// Sem o nome, o texto diz que a opção espera o nome da empresa (e ela fica desligada).
 String infinityTextoDoConsentimento() {
-  final empresa = bind.mainGetOptionSync(key: kInfinityOpcaoEmpresa).trim();
+  final empresa = infinityEmpresa();
   if (empresa.isEmpty) {
-    return translate('infinity-sem-ninguem-permitir-generico');
+    return translate('infinity-sem-ninguem-sem-nome');
   }
   return translate('infinity-sem-ninguem-permitir')
       .replaceAll('{empresa}', empresa);
@@ -136,17 +168,28 @@ void infinityTalvezPerguntarConsentimento() {
     _consentimentoPerguntado = true;
     return;
   }
-  if (!infinityComputadorNaEmpresa()) return;
-  if (bind.mainGetOptionSync(key: kInfinityOpcaoSemNinguem).isNotEmpty) {
+  // Sem o nome da empresa, não pergunta: espera o nome chegar (o relógio volta aqui).
+  if (!infinityConsentimentoDisponivel()) return;
+  // Já respondida para esta empresa. Resposta sem nome ou de outro nome: pergunta de novo.
+  if (bind.mainGetOptionSync(key: kInfinityOpcaoSemNinguem).isNotEmpty &&
+      _respostaDaEmpresaDeHoje()) {
     _consentimentoPerguntado = true;
     return;
   }
+  final empresaNaTela = infinityEmpresa();
   _consentimentoPerguntado = true;
   _consentimentoAberto = true;
   gFFI.dialogManager.show((setState, close, context) {
     responder(bool permitido) async {
       // Uma conexão chegou enquanto o diálogo estava na tela: o clique não vale.
       if (_temConexaoEntrando()) {
+        _consentimentoAberto = false;
+        _consentimentoPerguntado = false;
+        close();
+        return;
+      }
+      // O nome mudou com a pergunta aberta: a resposta era para o nome de antes.
+      if (infinityEmpresa() != empresaNaTela) {
         _consentimentoAberto = false;
         _consentimentoPerguntado = false;
         close();
@@ -169,7 +212,9 @@ void infinityTalvezPerguntarConsentimento() {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(infinityTextoDoConsentimento(),
+            Text(
+                translate('infinity-sem-ninguem-permitir')
+                    .replaceAll('{empresa}', empresaNaTela),
                 style: const TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
             Text(translate('infinity-sem-ninguem-explicacao')),
@@ -471,5 +516,37 @@ Widget infinityAvisoDaChave(BuildContext context, VoidCallback atualizar) {
         ]),
       ],
     ),
+  );
+}
+
+/// "Ligado a <empresa>", fixo na janela principal enquanto o computador está numa empresa
+/// e o nome dela chegou do Infinity.
+Widget infinityLigadoA(BuildContext context) {
+  if (bind.isOutgoingOnly() || !infinityComputadorNaEmpresa()) {
+    return const Offstage();
+  }
+  final empresa = infinityEmpresa();
+  if (empresa.isEmpty) return const Offstage();
+  final cor = Theme.of(context).textTheme.titleLarge?.color;
+  return Container(
+    margin: const EdgeInsets.fromLTRB(20, 12, 16, 0),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    decoration: BoxDecoration(
+      border: Border.all(color: MyTheme.accent.withOpacity(0.5)),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Row(children: [
+      const Icon(Icons.business_outlined, size: 16, color: MyTheme.accent)
+          .marginOnly(right: 8),
+      Expanded(
+        child: Text(
+          translate('infinity-ligado-a').replaceAll('{empresa}', empresa),
+          style: TextStyle(
+              fontSize: 12, fontWeight: FontWeight.w600, color: cor),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    ]),
   );
 }
