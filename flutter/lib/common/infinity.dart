@@ -26,6 +26,7 @@ import 'package:get/get.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
+import 'package:flutter_hbb/models/state_model.dart';
 import 'package:flutter_hbb/utils/http_service.dart' as http;
 
 const kInfinityOpcaoConvite = 'infinity-convite';
@@ -112,11 +113,25 @@ String infinityTextoDoConsentimento() {
 }
 
 bool _consentimentoPerguntado = false;
+bool _consentimentoAberto = false;
+const _kTagConsentimento = 'infinity-consentimento';
 
 /// Chamado pelo relógio da janela principal: quando o computador entra numa empresa e o
-/// consentimento nunca foi respondido, pergunta uma vez.
+/// consentimento nunca foi respondido, pergunta uma vez. Nunca com alguém conectado: quem
+/// está no controle remoto (o técnico) não pode responder pelo dono do computador. Se uma
+/// conexão chega com a pergunta aberta, ela fecha sem resposta e volta depois.
+bool _temConexaoEntrando() =>
+    stateGlobal.videoConnCount.value > 0 || gFFI.serverModel.clients.isNotEmpty;
+
 void infinityTalvezPerguntarConsentimento() {
-  if (_consentimentoPerguntado) return;
+  final temConexao = _temConexaoEntrando();
+  if (_consentimentoAberto && temConexao) {
+    gFFI.dialogManager.dismissByTag(_kTagConsentimento);
+    _consentimentoAberto = false;
+    _consentimentoPerguntado = false;
+    return;
+  }
+  if (_consentimentoPerguntado || temConexao) return;
   if (bind.isOutgoingOnly()) {
     _consentimentoPerguntado = true;
     return;
@@ -127,9 +142,18 @@ void infinityTalvezPerguntarConsentimento() {
     return;
   }
   _consentimentoPerguntado = true;
+  _consentimentoAberto = true;
   gFFI.dialogManager.show((setState, close, context) {
     responder(bool permitido) async {
+      // Uma conexão chegou enquanto o diálogo estava na tela: o clique não vale.
+      if (_temConexaoEntrando()) {
+        _consentimentoAberto = false;
+        _consentimentoPerguntado = false;
+        close();
+        return;
+      }
       await infinityGravarConsentimento(permitido);
+      _consentimentoAberto = false;
       close();
     }
 
@@ -159,7 +183,7 @@ void infinityTalvezPerguntarConsentimento() {
       ],
       onCancel: () => responder(false),
     );
-  }, tag: 'infinity-consentimento');
+  }, tag: _kTagConsentimento);
 }
 
 // ─────────────────────── técnico: "O que foi feito?" ───────────────────────
@@ -179,14 +203,22 @@ Future<String?> _sessaoRecente(String api, String peerId) async {
     if (r.statusCode != 200) return null;
     final lista = jsonDecode(r.body);
     if (lista is! List) return null;
+    // A mais recente deste computador ainda sem anotação (a lista não vem ordenada).
+    String? id;
+    DateTime? quando;
     for (final s in lista) {
       if (s is Map &&
           s['rustdesk_id'] == peerId &&
           s['o_que_foi_feito_registrado'] != true &&
           s['id'] is String) {
-        return s['id'] as String;
+        final t = DateTime.tryParse('${s['iniciada_em']}');
+        if (id == null || (t != null && (quando == null || t.isAfter(quando)))) {
+          id = s['id'] as String;
+          quando = t;
+        }
       }
     }
+    return id;
   } catch (e) {
     debugPrint('Infinity: sessões recentes indisponíveis');
   }

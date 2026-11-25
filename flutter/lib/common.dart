@@ -2232,7 +2232,9 @@ StreamSubscription? listenUniLinks({handleByFlutter = true}) {
   }
 
   final sub = uriLinkStream.listen((Uri? uri) {
-    debugPrint("A uri was received: $uri. handleByFlutter $handleByFlutter");
+    // Infinity Remote: o link de convite leva o token (ric_...): não vai inteiro ao log.
+    final uriNoLog = uri?.authority == 'convite' ? 'infinity-remote://convite/***' : '$uri';
+    debugPrint("A uri was received: $uriNoLog. handleByFlutter $handleByFlutter");
     if (uri != null) {
       if (handleByFlutter) {
         handleUriLink(uri: uri);
