@@ -497,7 +497,12 @@ impl Drop for Mp4Vp9Recorder {
         let fechou = match self.mp4.take() {
             Some(mut m) => {
                 let r = m.finalizar();
-                drop(m); // fecha o arquivo antes de renomear ou apagar
+                let fim = m.tamanho_final();
+                // Depois de um erro de escrita pode sobrar pedaço de quadro depois do `moov`:
+                // corta no fim do índice. Fecha o arquivo antes de renomear ou apagar.
+                if let (Ok(true), true, Ok(arquivo)) = (&r, self.falhou, m.into_inner().into_inner()) {
+                    arquivo.set_len(fim).ok();
+                }
                 matches!(r, Ok(true))
             }
             None => false,

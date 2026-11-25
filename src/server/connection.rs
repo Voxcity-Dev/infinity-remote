@@ -2529,6 +2529,14 @@ impl Connection {
                 return true;
             }
             self.reset_session_scope_for_login();
+            // Infinity Remote: antes do `match` abaixo, que move partes de `lr.union`. Só
+            // controle remoto, câmera e transferência de arquivo entram sem ninguém no PC:
+            // túnel de porta (e RDP) e terminal ficam de fora (o consentimento não fala deles).
+            let tipo_do_acesso_sem_ninguem = !matches!(
+                lr.union.as_ref(),
+                Some(login_request::Union::PortForward(_))
+                    | Some(login_request::Union::Terminal(_))
+            );
             match lr.union {
                 Some(login_request::Union::FileTransfer(ft)) => {
                     if !Self::permission(
@@ -2678,13 +2686,6 @@ impl Connection {
             // neste computador e a prova (irp_) do técnico no login, quem decide é o Infinity
             // (/api/autorizar-acesso), sem esperar alguém clicar em Permitir. Sem consentimento
             // ou sem prova, segue o fluxo normal (senha ou o Permitir de quem está no PC).
-            // Só controle remoto, câmera e transferência de arquivo: túnel de porta (e RDP) e
-            // terminal sem ninguém no PC ficam de fora (o consentimento não fala deles).
-            let tipo_do_acesso_sem_ninguem = !matches!(
-                lr.union,
-                Some(login_request::Union::PortForward(_))
-                    | Some(login_request::Union::Terminal(_))
-            );
             if !lr.infinity_prova.is_empty()
                 && !self.terminal
                 && tipo_do_acesso_sem_ninguem

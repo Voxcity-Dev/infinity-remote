@@ -31,6 +31,7 @@ pub struct Mp4Vp9<W: Write + Seek> {
     amostras: Vec<Amostra>,
     perfil: u8,
     fechado: bool,
+    fim: u64,
 }
 
 impl<W: Write + Seek> Mp4Vp9<W> {
@@ -54,6 +55,7 @@ impl<W: Write + Seek> Mp4Vp9<W> {
             amostras: Vec::new(),
             perfil: 0,
             fechado: false,
+            fim: 0,
         })
     }
 
@@ -102,7 +104,14 @@ impl<W: Write + Seek> Mp4Vp9<W> {
         let moov = self.moov();
         self.saida.write_all(&moov)?;
         self.saida.flush()?;
+        self.fim = self.posicao + moov.len() as u64;
         Ok(true)
+    }
+
+    /// Onde o arquivo termina depois de `finalizar` (fim do `moov`). Um quadro que falhou ao
+    /// meio pode ter deixado bytes depois: quem tem o arquivo trunca aqui.
+    pub fn tamanho_final(&self) -> u64 {
+        self.fim
     }
 
     pub fn into_inner(self) -> W {
@@ -424,7 +433,9 @@ mod test {
         assert!(m.finalizar().unwrap());
         assert!(m.finalizar().unwrap()); // de novo não reescreve
         assert!(!m.escrever(&[0x82, 1], true, 200).unwrap()); // fechado não aceita
+        let fim = m.tamanho_final();
         let saida = m.into_inner().into_inner();
+        assert_eq!(fim as usize, saida.len());
         let b = &saida[..];
         let top = caixas(b, 0, b.len());
         let tipos: Vec<&str> = top.iter().map(|(t, _, _)| t.as_str()).collect();
