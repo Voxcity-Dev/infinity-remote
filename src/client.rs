@@ -1678,6 +1678,7 @@ impl VideoHandler {
                 server: false,
                 id,
                 dir: pasta_infinity
+                    .clone()
                     .unwrap_or_else(|| crate::ui_interface::video_save_directory(false)),
                 display_idx,
                 camera,
@@ -1685,6 +1686,10 @@ impl VideoHandler {
                 infinity,
             })
             .map_or(Default::default(), |r| Arc::new(Mutex::new(Some(r))));
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            if let Some(pasta) = pasta_infinity.as_deref() {
+                crate::infinity::registrar_gravador(pasta, &self.recorder);
+            }
         } else {
             self.recorder = Default::default();
         }

@@ -367,6 +367,7 @@ impl<T: InvokeUiSession> Remote<T> {
             for (_, v) in self.video_threads.iter_mut() {
                 v.video_sender.send(MediaData::RecordScreen(false)).ok();
             }
+            crate::infinity::fechar_gravadores(&pasta);
             crate::infinity::enviar_gravacao_ao_fim(self.handler.get_id(), pasta);
         }
         self.handle_disconnected(round);

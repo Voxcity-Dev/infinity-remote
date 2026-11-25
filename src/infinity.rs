@@ -912,6 +912,37 @@ mod gravacao {
             .collect()
     }
 
+    type Gravador = std::sync::Arc<std::sync::Mutex<Option<scrap::record::Recorder>>>;
+
+    lazy_static::lazy_static! {
+        /// Os gravadores vivos de cada pasta (conexão). Fraco: não segura o gravador.
+        static ref GRAVADORES: std::sync::Mutex<
+            std::collections::HashMap<String, Vec<std::sync::Weak<std::sync::Mutex<Option<scrap::record::Recorder>>>>>,
+        > = Default::default();
+    }
+
+    /// Guarda o gravador da empresa desta pasta, para o fim da conexão fechá-lo.
+    pub fn registrar_gravador(pasta: &str, gravador: &Gravador) {
+        let mut g = GRAVADORES.lock().unwrap();
+        let v = g.entry(pasta.to_owned()).or_default();
+        v.retain(|w| w.strong_count() > 0);
+        v.push(std::sync::Arc::downgrade(gravador));
+    }
+
+    /// Fim da conexão: fecha os gravadores desta pasta pelo mutex deles. A thread de vídeo do
+    /// técnico pode ficar presa depois que a janela da sessão fecha (o upstream não a acorda),
+    /// então não dá para esperar que ela troque o gravador: fechado aqui, o `.parcial.mp4`
+    /// vira `.mp4`. Um quadro que chegue depois não grava (o gravador já é None).
+    pub fn fechar_gravadores(pasta: &str) {
+        let fracos = GRAVADORES.lock().unwrap().remove(pasta).unwrap_or_default();
+        for w in fracos {
+            if let Some(g) = w.upgrade() {
+                let antigo = g.lock().unwrap().take();
+                drop(antigo); // Drop do gravador: finaliza o MP4 e renomeia
+            }
+        }
+    }
+
     /// Fim da conexão: sobe a gravação desta pasta numa thread própria (a do io_loop acaba).
     pub fn enviar_gravacao_ao_fim(rustdesk_id: String, pasta: String) {
         std::thread::spawn(move || {
