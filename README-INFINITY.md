@@ -43,6 +43,15 @@ Só o **`.deb` Flutter** (Linux x64) é suportado. RPM (`res/rpm*.spec`), AppIma
 (`appimage/`), Arch (`res/PKGBUILD`), Flatpak (`flatpak/`) e o `.deb` sciter ainda usam os
 nomes `rustdesk` e ficaram fora depois do rename: não foram ajustados nem testados.
 
+## Licença e instalação no Windows
+
+- O fork e o submódulo `libs/hbb_common` (repositório `infinity-remote-hbb-common`) são
+  AGPL-3.0, como o RustDesk. O upstream não traz o arquivo de licença no `hbb_common`; o
+  fork acrescentou o `LICENCE` (o mesmo texto da raiz deste repositório), que a AGPL pede.
+- O instalador Windows sai **sem assinatura de código** (decisão de 25/11/2026). Na primeira
+  execução o Windows mostra "O Windows protegeu o computador": clique em **Mais informações**
+  e depois em **Executar assim mesmo**.
+
 ## Ambientes de build
 
 `build-env/<ambiente>.env` guarda as variáveis lidas em tempo de compilação. Hoje só existe
