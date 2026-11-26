@@ -24,6 +24,8 @@ infinity_carregar_env() {
     . "./${arq}"
     printf '%s\n%s\n%s\n' "${RENDEZVOUS_SERVER:-}" "${RS_PUB_KEY:-}" "${API_SERVER:-}"
   )
+  # reforço do eol=lf do .gitattributes: um .env com \r\n não deixa \r no valor
+  rv=${rv%$'\r'} pk=${pk%$'\r'} api=${api%$'\r'}
 
   [ -n "$rv" ] || { echo "ERRO: RENDEZVOUS_SERVER vazio em ${arq}" >&2; return 1; }
   [ -n "$pk" ] || { echo "ERRO: RS_PUB_KEY vazio em ${arq} (a de prod nasce na 1ª subida do hbbs de prod)" >&2; return 1; }
@@ -36,10 +38,11 @@ infinity_carregar_env() {
 
   if [ "$amb" = prod ]; then
     # prod pelo nome, nunca pelo IP: o host é provisório (#34137)
-    [[ "$rv" =~ ^[0-9.:]+$ ]] && { echo "ERRO: RENDEZVOUS_SERVER de prod é IP; use o nome (remote.voxcity.com.br)" >&2; return 1; }
+    # IPv4 (com ou sem porta) ou IPv6 (dois ou mais ':' ou entre colchetes)
+    [[ "$rv" =~ ^[0-9.]+(:[0-9]+)?$ || "$rv" == \[* || "$rv" == *:*:* ]] && { echo "ERRO: RENDEZVOUS_SERVER de prod é IP; use o nome (remote.voxcity.com.br)" >&2; return 1; }
     # chave do homolog copiada para prod = programa de prod que não fala com o hbbs de prod
     local pk_h
-    pk_h=$(sed -n 's/^RS_PUB_KEY=//p' build-env/homolog.env 2>/dev/null | tail -1)
+    pk_h=$(sed -n 's/^RS_PUB_KEY=//p' build-env/homolog.env 2>/dev/null | tail -1 | tr -d '\r')
     [ "$pk" != "$pk_h" ] || { echo "ERRO: RS_PUB_KEY de prod é igual à do homolog" >&2; return 1; }
   fi
 
