@@ -1,18 +1,27 @@
 # Infinity Remote: build só do Windows x86_64, disparado à mão, com o servidor
 # embutido em tempo de compilação (option_env! em libs/hbb_common/src/config.rs e
-# src/common.rs). Os valores vêm das variáveis do repositório (Settings > Variables),
-# criadas a partir de build-env/homolog.env. Instalador SEM assinatura, só teste interno.
+# src/common.rs). Os valores vêm de build-env/<ambiente>.env (entrada "ambiente":
+# homolog ou prod), carregados por build-env/carregar-env.sh, que recusa chave vazia
+# ou malformada. As variáveis do repositório (vars.*) NÃO são mais lidas. Instalador
+# SEM assinatura (decisão de 25/11/2026).
 # Não publica release: o resultado sai só como artefato do run.
 # Passos copiados do job build-for-windows-flutter de flutter-build.yml (perna x64).
 name: Infinity Windows x64 (dispatch)
 
 on:
   workflow_dispatch:
+    inputs:
+      ambiente:
+        description: "Ambiente embutido no programa (build-env/<ambiente>.env)"
+        required: true
+        type: choice
+        options:
+          - homolog
+          - prod
+
+run-name: "Infinity Windows x64 (${{ inputs.ambiente }})"
 
 env:
-  RENDEZVOUS_SERVER: "${{ vars.RENDEZVOUS_SERVER }}"
-  RS_PUB_KEY: "${{ vars.RS_PUB_KEY }}"
-  API_SERVER: "${{ vars.API_SERVER }}"
   SCITER_RUST_VERSION: "1.75"
   LLVM_VERSION: "15.0.6"
   FLUTTER_VERSION: "3.24.5"
@@ -38,16 +47,6 @@ jobs:
     needs: [build-RustDeskTempTopMostWindow, generate-bridge]
     runs-on: windows-2022
     steps:
-      - name: Check build-time server variables
-        shell: bash
-        run: |
-          [ -n "$RENDEZVOUS_SERVER" ] || { echo "vars.RENDEZVOUS_SERVER vazio"; exit 1; }
-          [ -n "$RS_PUB_KEY" ] || { echo "vars.RS_PUB_KEY vazio"; exit 1; }
-          [ -n "$API_SERVER" ] || { echo "vars.API_SERVER vazio (sem ele o cliente cai em http://<rendezvous>:21114)"; exit 1; }
-          # Infinity Remote: a API do Infinity só por HTTPS (o cliente recusa http: src/infinity.rs).
-          case "$API_SERVER" in https://*) ;; *) echo "vars.API_SERVER tem de começar com https://"; exit 1;; esac
-          echo "RENDEZVOUS_SERVER len=${#RENDEZVOUS_SERVER}; RS_PUB_KEY len=${#RS_PUB_KEY}; API_SERVER len=${#API_SERVER}"
-
       - name: Export GitHub Actions cache environment variables
         uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
         with:
@@ -59,6 +58,18 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           submodules: recursive
+
+      # Servidor, chave pública e API do build-env/<ambiente>.env, conferidos pelo
+      # carregador único; seguem para os passos seguintes pelo GITHUB_ENV.
+      - name: Load build-env/<ambiente>.env
+        shell: bash
+        env:
+          AMBIENTE: ${{ inputs.ambiente }}
+        run: |
+          set -euo pipefail
+          . build-env/carregar-env.sh "$AMBIENTE"
+          printf 'RENDEZVOUS_SERVER=%s\nRS_PUB_KEY=%s\nAPI_SERVER=%s\n' \
+            "$RENDEZVOUS_SERVER" "$RS_PUB_KEY" "$API_SERVER" >> "$GITHUB_ENV"
 
       - name: Restore bridge files
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -184,7 +195,7 @@ jobs:
       - name: Upload unsigned folder
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: infinity-remote-unsigned-windows-x86_64
+          name: infinity-remote-unsigned-windows-x86_64-${{ inputs.ambiente }}
           path: rustdesk
 
       - name: Build self-extracted executable
@@ -196,7 +207,7 @@ jobs:
           python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/rustdesk.exe
           popd
           mkdir -p ./SignOutput
-          mv ./target/release/rustdesk-portable-packer.exe ./SignOutput/infinity-remote-${{ env.VERSION }}-x86_64-unsigned.exe
+          mv ./target/release/rustdesk-portable-packer.exe ./SignOutput/infinity-remote-${{ env.VERSION }}-x86_64-${{ inputs.ambiente }}-unsigned.exe
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2
@@ -208,11 +219,11 @@ jobs:
           nuget restore msi.sln
           msbuild msi.sln -p:Configuration=Release -p:Platform=x64 /p:TargetVersion=Windows10
           $msi = Get-ChildItem ./Package/bin/*/Release/en-us/Package.msi | Select-Object -First 1
-          mv $msi.FullName ../../SignOutput/infinity-remote-${{ env.VERSION }}-x86_64-unsigned.msi
+          mv $msi.FullName ../../SignOutput/infinity-remote-${{ env.VERSION }}-x86_64-${{ inputs.ambiente }}-unsigned.msi
           sha256sum ../../SignOutput/*
 
       - name: Upload installers
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: infinity-remote-windows-x86_64-installers
+          name: infinity-remote-windows-x86_64-installers-${{ inputs.ambiente }}
           path: ./SignOutput/*

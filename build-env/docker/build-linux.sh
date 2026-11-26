@@ -6,13 +6,13 @@
 #   C=$HOME/.cache/infinity-remote-build
 #   docker run --rm --cpus=3 --memory=12g -u $(id -u):$(id -g) \
 #     -v "$PWD":/workspace -v "$C":/cache -v "$C/vcpkg-installed":/opt/vcpkg/installed \
-#     infinity-remote-build:linux bash build-env/docker/build-linux.sh [homolog]
+#     infinity-remote-build:linux bash build-env/docker/build-linux.sh <homolog|prod>
 #
 # Etapas: vcpkg (manifest) -> ponte flutter_rust_bridge 1.80.1 -> cargo (features do
 # workflow) -> python3 build.py --flutter --skip-cargo (gera infinity-remote-<versão>.deb).
 set -euo pipefail
 
-ENV_NAME="${1:-homolog}"
+ENV_NAME="${1:?uso: build-linux.sh <homolog|prod>}"
 cd /workspace
 
 export CARGO_HOME=/cache/cargo
@@ -25,16 +25,11 @@ mkdir -p "$CARGO_HOME" "$HOME" "$PUB_CACHE" "$VCPKG_DEFAULT_BINARY_CACHE" "$VCPK
 # cargo/rustup instalados na imagem; o CARGO_HOME do volume só guarda registry/git.
 [ -e "$CARGO_HOME/bin" ] || ln -s /opt/cargo/bin "$CARGO_HOME/bin"
 
-# Servidor e chave embutidos (option_env! em tempo de compilação).
-set -a
-# shellcheck disable=SC1090
-. "build-env/${ENV_NAME}.env"
-set +a
-for v in RENDEZVOUS_SERVER RS_PUB_KEY API_SERVER; do
-  [ -n "${!v:-}" ] || { echo "ERRO: ${v} vazio em build-env/${ENV_NAME}.env"; exit 1; }
-done
-# só tamanhos: o log do Actions do fork é público e variável de repositório não é mascarada
-echo "== env de build: ${ENV_NAME} (RENDEZVOUS_SERVER len=${#RENDEZVOUS_SERVER}; RS_PUB_KEY len=${#RS_PUB_KEY}; API_SERVER len=${#API_SERVER})"
+# Servidor, chave pública e API embutidos (option_env! em tempo de compilação), do
+# build-env/<ambiente>.env pelo carregador único: recusa ambiente fora de homolog|prod,
+# chave vazia ou malformada, API sem https e, em prod, servidor por IP.
+# shellcheck source=../carregar-env.sh
+. build-env/carregar-env.sh "$ENV_NAME"
 
 t0=$(date +%s)
 step() { echo; echo "== [$(( $(date +%s) - t0 ))s] $*"; }

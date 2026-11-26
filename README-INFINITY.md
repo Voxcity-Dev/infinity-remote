@@ -54,16 +54,24 @@ nomes `rustdesk` e ficaram fora depois do rename: não foram ajustados nem testa
 
 ## Ambientes de build
 
-`build-env/<ambiente>.env` guarda as variáveis lidas em tempo de compilação. Hoje só existe
-`homolog.env`:
+`build-env/<ambiente>.env` guarda as variáveis lidas em tempo de compilação, um arquivo por
+ambiente: `homolog.env` e `prod.env`. É a fonte única: os workflows (`infinity-windows-x64.yml`,
+`infinity-linux-x64.yml`) pedem a entrada `ambiente` (homolog | prod) e o `build-linux.sh`
+pede o mesmo nome como argumento; as variáveis do repositório (Settings > Variables) não são
+mais lidas. O repositório é público: só entra o que já é público.
 
-| Variável | Valor |
-|---|---|
-| `RENDEZVOUS_SERVER` | `186.237.58.169` (hbbs da homolog) |
-| `RS_PUB_KEY` | chave **pública** do hbbs (não é segredo) |
-| `API_SERVER` | vazio, a definir; vazio = `http://<RENDEZVOUS_SERVER>:21114` |
+| Variável | homolog | prod |
+|---|---|---|
+| `RENDEZVOUS_SERVER` | `186.237.58.169` (hbbs da homolog) | `remote.voxcity.com.br` (o nome, nunca o IP) |
+| `RS_PUB_KEY` | chave **pública** do hbbs (não é segredo) | **a preencher**: nasce na 1ª subida do hbbs de prod |
+| `API_SERVER` | gateway do homolog + `/core/remote` | `https://api-gateway.voxcity.com.br/core/remote` |
 
-Sem as variáveis o binário cai nos servidores públicos do RustDesk.
+Quem carrega é `build-env/carregar-env.sh` (`. build-env/carregar-env.sh prod`). Ele **recusa**
+o build com ambiente fora de homolog | prod, variável vazia (a chave de prod vazia inclusive),
+chave que não tem a forma de chave pública do hbbs (base64 de 32 bytes), `API_SERVER` sem
+`https://` e, em prod, servidor por IP ou a chave do homolog copiada. Só imprime tamanhos.
+
+Sem as variáveis o binário cairia nos servidores públicos do RustDesk; por isso a recusa.
 
 ## Como buildar (Linux, Flutter) — container
 
@@ -75,7 +83,7 @@ flutter_rust_bridge_codegen 1.80.1) e o script `build-env/docker/build-linux.sh`
 # imagem (contexto = .github/patches, só para o patch do Flutter)
 docker build -t infinity-remote-build:linux -f build-env/docker/Dockerfile.linux .github/patches
 
-# build; o argumento é o nome do ambiente em build-env/ (padrão: homolog)
+# build; o argumento é o nome do ambiente em build-env/ (homolog ou prod, obrigatório)
 C=$HOME/.cache/infinity-remote-build
 docker run --rm --cpus=3 --memory=12g -u $(id -u):$(id -g) \
   -v "$PWD":/workspace -v "$C":/cache -v "$C/vcpkg-installed":/opt/vcpkg/installed \
